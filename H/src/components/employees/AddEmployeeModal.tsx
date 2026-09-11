@@ -109,7 +109,7 @@ export const AddEmployeeModal: React.FC<AddEmployeeModalProps> = ({
     phone: '',
     personalEmail: '',
     companyEmail: '',
-    maritalStatus: 'Single' as 'Single' | 'Married' | 'Divorced' | 'Widowed',
+    maritalStatus: '' as 'Single' | 'Married' | 'Divorced' | 'Widowed' | '',
 
     // 2. Employment Information
     joiningDate: new Date().toISOString().split('T')[0],
@@ -272,7 +272,7 @@ export const AddEmployeeModal: React.FC<AddEmployeeModalProps> = ({
       if (!formData.phone.trim()) return 'Phone number is mandatory.';
       const digits = formData.phone.replace(/\D/g, '');
       if (digits.length < 10) return 'Please enter a valid 10-digit mobile phone number.';
-      if (!formData.maritalStatus) return 'Marital Status is mandatory.';
+      if (!formData.maritalStatus) return 'Marital Status is mandatory. Please select an option.';
     }
 
     if (currStep === 2) {
@@ -452,7 +452,7 @@ export const AddEmployeeModal: React.FC<AddEmployeeModalProps> = ({
       // Extended Structured Data
       personalEmail: formData.personalEmail,
       companyEmail: formData.companyEmail,
-      maritalStatus: formData.maritalStatus,
+      maritalStatus: (formData.maritalStatus || undefined) as Employee['maritalStatus'],
       workLocation: formData.workLocation,
       currentAddress: {
         line1: formData.currentLine1,
@@ -881,6 +881,7 @@ export const AddEmployeeModal: React.FC<AddEmployeeModalProps> = ({
                   onChange={e => handleChange('maritalStatus', e.target.value)}
                   required
                 >
+                  <option value="">Select Marital Status</option>
                   <option value="Single">Single</option>
                   <option value="Married">Married</option>
                   <option value="Divorced">Divorced</option>
@@ -1943,7 +1944,7 @@ export const AddEmployeeModal: React.FC<AddEmployeeModalProps> = ({
                 </div>
                 <div className="review-field-box">
                   <div className="review-field-label">Marital Status</div>
-                  <div className="review-field-val">{formData.maritalStatus || 'Single'}</div>
+                  <div className="review-field-val">{formData.maritalStatus || 'N/A'}</div>
                 </div>
               </div>
             </div>
