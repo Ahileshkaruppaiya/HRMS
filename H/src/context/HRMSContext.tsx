@@ -1448,7 +1448,7 @@ const INITIAL_BUSINESS_SETTINGS: BusinessProfileSettings = {
   pan: 'AABCV1234F',
   cin: 'U45200TN2018PTC123456',
   employeeCodeGeneration: 'Auto',
-  employeeCodePrefix: 'EMP-',
+  employeeCodePrefix: 'EMP',
   employeeCodeSample: 'EMP-001',
   administrator: 'Velmurugan (Super Admin)',
   currency: 'INR - ₹ (India)',
@@ -5052,10 +5052,11 @@ export const HRMSProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
   // Actions
   const addEmployee = (empData: Omit<Employee, 'id'>) => {
-    const prefix = businessSettings?.employeeCodePrefix || 'EMP';
+    const rawPrefix = businessSettings?.employeeCodePrefix || 'EMP';
+    const cleanPrefix = rawPrefix.endsWith('-') ? rawPrefix.slice(0, -1) : rawPrefix;
     const newId = empData.employeeId && empData.employeeId.trim().length > 0
       ? empData.employeeId.trim()
-      : `${prefix}-${(employees.length + 1).toString().padStart(3, '0')}`;
+      : `${cleanPrefix}-${(employees.length + 1).toString().padStart(3, '0')}`;
     const newEmp: Employee = { ...empData, id: newId, employeeId: newId };
     setEmployees(prev => [newEmp, ...prev]);
 

@@ -98,11 +98,25 @@ export const AddEmployeeModal: React.FC<AddEmployeeModalProps> = ({
     reader.readAsDataURL(file);
   };
 
+  const [idMode, setIdMode] = useState<'auto' | 'manual'>(() => {
+    return businessSettings?.employeeCodeGeneration === 'Manual' ? 'manual' : 'auto';
+  });
+
   // Auto-generate employee ID using business settings prefix
   const generateNewEmpId = () => {
-    const prefix = businessSettings?.employeeCodePrefix || 'EMP';
-    const nextNum = employees.length + 1;
-    return `${prefix}-${String(nextNum).padStart(3, '0')}`;
+    const rawPrefix = businessSettings?.employeeCodePrefix || 'EMP';
+    const cleanPrefix = rawPrefix.replace(/[-_]+$/, '') || 'EMP';
+    
+    // Find highest numeric suffix among existing employees matching prefix
+    const existingNums = employees
+      .map(e => {
+        const match = e.employeeId.match(new RegExp(`^${cleanPrefix}[-_]?(\\d+)$`, 'i'));
+        return match ? parseInt(match[1], 10) : 0;
+      })
+      .filter(n => !isNaN(n) && n > 0);
+    
+    const nextNum = (existingNums.length > 0 ? Math.max(...existingNums) : employees.length) + 1;
+    return `${cleanPrefix}-${String(nextNum).padStart(3, '0')}`;
   };
 
   const defaultFormData = {
@@ -236,6 +250,8 @@ export const AddEmployeeModal: React.FC<AddEmployeeModalProps> = ({
   useEffect(() => {
     if (isOpen) {
       setStep(1);
+      const initialMode = businessSettings?.employeeCodeGeneration === 'Manual' ? 'manual' : 'auto';
+      setIdMode(initialMode);
       const newId = generateNewEmpId();
       setFormData({
         ...defaultFormData,
@@ -703,22 +719,101 @@ export const AddEmployeeModal: React.FC<AddEmployeeModalProps> = ({
 
             <div className="form-row" style={{ marginBottom: '18px' }}>
               <div className="form-group">
-                <label className="form-label">Employee ID (Auto-Generated)</label>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                  <label className="form-label" style={{ margin: 0 }}>
+                    Employee ID <span className="required-star">*</span>
+                  </label>
+                  <div style={{ display: 'inline-flex', background: '#F1F5F9', borderRadius: '8px', padding: '2px', border: '1px solid #E2E8F0' }}>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIdMode('auto');
+                        handleChange('employeeId', generateNewEmpId());
+                      }}
+                      style={{
+                        border: 'none',
+                        background: idMode === 'auto' ? '#0E7490' : 'transparent',
+                        color: idMode === 'auto' ? '#FFFFFF' : '#64748B',
+                        borderRadius: '6px',
+                        padding: '3px 10px',
+                        fontSize: '11px',
+                        fontWeight: 600,
+                        cursor: 'pointer',
+                        transition: 'all 0.15s ease',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '4px'
+                      }}
+                    >
+                      ⚡ Auto
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIdMode('manual');
+                      }}
+                      style={{
+                        border: 'none',
+                        background: idMode === 'manual' ? '#0E7490' : 'transparent',
+                        color: idMode === 'manual' ? '#FFFFFF' : '#64748B',
+                        borderRadius: '6px',
+                        padding: '3px 10px',
+                        fontSize: '11px',
+                        fontWeight: 600,
+                        cursor: 'pointer',
+                        transition: 'all 0.15s ease',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '4px'
+                      }}
+                    >
+                      ✏️ Manual
+                    </button>
+                  </div>
+                </div>
+
                 <div style={{ display: 'flex', gap: '8px' }}>
                   <input 
                     className="form-control" 
                     value={formData.employeeId} 
-                    onChange={e => handleChange('employeeId', e.target.value)}
-                    style={{ fontWeight: 700, letterSpacing: '0.04em' }}
+                    onChange={e => handleChange('employeeId', e.target.value.toUpperCase())}
+                    placeholder={idMode === 'manual' ? 'Enter manual ID (e.g. EMP-101, VRM-042)' : 'Auto-generated ID'}
+                    style={{ 
+                      fontWeight: 700, 
+                      letterSpacing: '0.04em',
+                      borderColor: formData.employeeId.trim() && employees.some(e => e.employeeId.toLowerCase() === formData.employeeId.trim().toLowerCase()) 
+                        ? '#EF4444' 
+                        : undefined
+                    }}
                   />
                   <button 
                     type="button" 
                     className="btn btn-secondary" 
-                    onClick={() => handleChange('employeeId', generateNewEmpId())}
-                    title="Generate another ID"
+                    onClick={() => {
+                      const freshId = generateNewEmpId();
+                      handleChange('employeeId', freshId);
+                    }}
+                    title="Generate next available sequential ID"
+                    style={{ flexShrink: 0 }}
                   >
                     <RefreshCw size={14} />
                   </button>
+                </div>
+
+                <div style={{ marginTop: '5px', fontSize: '11px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  {formData.employeeId.trim() && employees.some(e => e.employeeId.toLowerCase() === formData.employeeId.trim().toLowerCase()) ? (
+                    <span style={{ color: '#EF4444', fontWeight: 600 }}>
+                      ⚠️ ID &quot;{formData.employeeId}&quot; is already in use by another employee!
+                    </span>
+                  ) : formData.employeeId.trim() ? (
+                    <span style={{ color: '#0E7490', fontWeight: 600 }}>
+                      ✓ {idMode === 'manual' ? 'Custom ID is available & ready' : 'Auto-generated ID sequence'}
+                    </span>
+                  ) : (
+                    <span style={{ color: '#EF4444' }}>
+                      ⚠️ Employee ID is required
+                    </span>
+                  )}
                 </div>
               </div>
               <div className="form-group">
