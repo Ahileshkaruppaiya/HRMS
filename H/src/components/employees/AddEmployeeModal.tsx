@@ -293,6 +293,9 @@ export const AddEmployeeModal: React.FC<AddEmployeeModalProps> = ({
       }
       if (!formData.emergencyName.trim()) return 'Emergency Contact Name is mandatory.';
       if (!formData.emergencyRelationship.trim()) return 'Emergency Contact Relationship is mandatory.';
+      if (!formData.emergencyMobile.trim()) return 'Emergency Contact Number is mandatory.';
+      const emergencyDigits = formData.emergencyMobile.replace(/\D/g, '');
+      if (emergencyDigits.length < 10) return 'Please enter a valid 10-digit Emergency Contact Number.';
     }
 
     if (currStep === 4) {
@@ -1136,7 +1139,7 @@ export const AddEmployeeModal: React.FC<AddEmployeeModalProps> = ({
                 <Phone size={20} color="var(--color-primary-blue)" />
                 <span>3C. Emergency Contact</span>
               </div>
-              <div className="form-row">
+              <div className="form-row" style={{ marginBottom: '14px' }}>
                 <div className="form-group">
                   <label className="form-label">Emergency Contact Name *</label>
                   <input 
@@ -1161,6 +1164,30 @@ export const AddEmployeeModal: React.FC<AddEmployeeModalProps> = ({
                     <option value="Friend">Friend</option>
                     <option value="Other">Other</option>
                   </select>
+                </div>
+              </div>
+
+              <div className="form-row">
+                <div className="form-group">
+                  <label className="form-label">Emergency Contact Number *</label>
+                  <input 
+                    type="tel"
+                    className="form-control" 
+                    value={formData.emergencyMobile} 
+                    onChange={e => handleChange('emergencyMobile', e.target.value)}
+                    placeholder="e.g. +91 98765 43210" 
+                    required 
+                  />
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Alternate Emergency Number (Optional)</label>
+                  <input 
+                    type="tel"
+                    className="form-control" 
+                    value={formData.emergencyAltMobile} 
+                    onChange={e => handleChange('emergencyAltMobile', e.target.value)}
+                    placeholder="e.g. +91 91234 56789" 
+                  />
                 </div>
               </div>
             </div>
