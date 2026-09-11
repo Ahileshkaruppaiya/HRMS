@@ -272,6 +272,7 @@ export const AddEmployeeModal: React.FC<AddEmployeeModalProps> = ({
       if (!formData.phone.trim()) return 'Phone number is mandatory.';
       const digits = formData.phone.replace(/\D/g, '');
       if (digits.length < 10) return 'Please enter a valid 10-digit mobile phone number.';
+      if (!formData.maritalStatus) return 'Marital Status is mandatory.';
     }
 
     if (currStep === 2) {
@@ -873,11 +874,12 @@ export const AddEmployeeModal: React.FC<AddEmployeeModalProps> = ({
 
             <div className="form-row">
               <div className="form-group">
-                <label className="form-label">Marital Status (Optional)</label>
+                <label className="form-label">Marital Status *</label>
                 <select 
                   className="form-control" 
                   value={formData.maritalStatus} 
                   onChange={e => handleChange('maritalStatus', e.target.value)}
+                  required
                 >
                   <option value="Single">Single</option>
                   <option value="Married">Married</option>
