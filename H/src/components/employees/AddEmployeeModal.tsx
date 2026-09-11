@@ -254,7 +254,10 @@ export const AddEmployeeModal: React.FC<AddEmployeeModalProps> = ({
       if (isDuplicateId) return `Employee ID "${formData.employeeId}" is already registered. Please provide a unique ID.`;
 
       const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-      if (formData.personalEmail && !emailRegex.test(formData.personalEmail.trim())) {
+      if (!formData.personalEmail.trim()) {
+        return 'Personal Email ID is mandatory.';
+      }
+      if (!emailRegex.test(formData.personalEmail.trim())) {
         return 'Please enter a valid personal email format.';
       }
       if (formData.companyEmail) {
@@ -856,13 +859,14 @@ export const AddEmployeeModal: React.FC<AddEmployeeModalProps> = ({
                 </div>
               </div>
               <div className="form-group">
-                <label className="form-label">Personal Email ID</label>
+                <label className="form-label">Personal Email ID *</label>
                 <input 
                   type="email" 
                   className="form-control" 
                   value={formData.personalEmail} 
                   onChange={e => handleChange('personalEmail', e.target.value)}
                   placeholder="rahul.personal@gmail.com" 
+                  required
                 />
               </div>
             </div>
