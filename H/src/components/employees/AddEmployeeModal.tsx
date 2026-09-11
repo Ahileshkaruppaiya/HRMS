@@ -98,23 +98,6 @@ export const AddEmployeeModal: React.FC<AddEmployeeModalProps> = ({
     reader.readAsDataURL(file);
   };
 
-  // Auto-generate employee ID using business settings prefix
-  const generateNewEmpId = () => {
-    const rawPrefix = businessSettings?.employeeCodePrefix || 'EMP';
-    const cleanPrefix = rawPrefix.replace(/[-_]+$/, '') || 'EMP';
-    
-    // Find highest numeric suffix among existing employees matching prefix
-    const existingNums = employees
-      .map(e => {
-        const match = e.employeeId.match(new RegExp(`^${cleanPrefix}[-_]?(\\d+)$`, 'i'));
-        return match ? parseInt(match[1], 10) : 0;
-      })
-      .filter(n => !isNaN(n) && n > 0);
-    
-    const nextNum = (existingNums.length > 0 ? Math.max(...existingNums) : employees.length) + 1;
-    return `${cleanPrefix}-${String(nextNum).padStart(3, '0')}`;
-  };
-
   const defaultFormData = {
     // 1. Personal Information
     employeeId: '',

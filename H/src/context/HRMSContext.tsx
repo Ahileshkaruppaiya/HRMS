@@ -1447,7 +1447,7 @@ const INITIAL_BUSINESS_SETTINGS: BusinessProfileSettings = {
   gstin: '33AABCV1234F1Z8',
   pan: 'AABCV1234F',
   cin: 'U45200TN2018PTC123456',
-  employeeCodeGeneration: 'Auto',
+  employeeCodeGeneration: 'Manual',
   employeeCodePrefix: 'EMP',
   employeeCodeSample: 'EMP-001',
   administrator: 'Velmurugan (Super Admin)',
