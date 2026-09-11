@@ -1,0 +1,408 @@
+// VRM Enterprise HRM - Initial Settings & Policy Configuration Data
+import { 
+  CompanyInfo, 
+  CompanyBranch, 
+  OrganizationStructure, 
+  AttendancePolicy, 
+  AttendanceCorrectionRequest,
+  MasterLeavePolicy, 
+  PayrollSettingsConfig, 
+  RewardPolicy, 
+  EmployeeRewardRecord,
+  PolicyAuditLog 
+} from '../types/settings';
+
+export const INITIAL_COMPANY_INFO: CompanyInfo = {
+  logoUrl: '',
+  companyName: 'VRM Structures Pvt. Ltd.',
+  legalCompanyName: 'VRM Industrial Structures Private Limited',
+  companyType: 'Private Limited',
+  industry: 'Civil Infrastructure & Construction Engineering',
+  registrationNumber: 'U45201TN2018PTC123456',
+  gstNumber: '33AAACV1234F1Z5',
+  panNumber: 'AAACV1234F',
+  cinNumber: 'U45201TN2018PTC123456',
+  website: 'https://vrmstructures.com',
+  officialEmail: 'corporate@vrmstructures.com',
+  officialPhone: '+91 44 2250 8890',
+  createdAt: '2026-01-01T09:00:00.000Z',
+  createdBy: 'Rajesh Sharma (CEO)',
+  updatedAt: '2026-08-15T14:30:00.000Z',
+  updatedBy: 'Ananya Verma (HR)'
+};
+
+export const INITIAL_COMPANY_BRANCHES: CompanyBranch[] = [
+  {
+    id: 'BR-HO-01',
+    branchName: 'Head Office - Chennai',
+    branchCode: 'HO-CHN',
+    isHeadOffice: true,
+    address: {
+      addressLine1: 'Plot 42, Heavy Industrial Growth Estate',
+      addressLine2: 'Phase II, Guindy Industrial Area',
+      city: 'Chennai',
+      state: 'Tamil Nadu',
+      country: 'India',
+      pincode: '600032'
+    },
+    contactNumber: '+91 44 2250 8891',
+    email: 'chennai.ho@vrmstructures.com',
+    branchHr: 'Ananya Verma',
+    workingDays: ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'],
+    workingHours: {
+      startTime: '09:30',
+      endTime: '18:30'
+    },
+    createdAt: '2026-01-01T09:00:00.000Z',
+    updatedAt: '2026-08-01T10:00:00.000Z'
+  }
+];
+
+export const INITIAL_ORG_STRUCTURE: OrganizationStructure = {
+  departments: [
+    'HR',
+    'Sales',
+    'Accounts',
+    'Procurement',
+    'Dispatch',
+    'Design',
+    'Finance',
+    'Technical Support'
+  ],
+  designations: [
+    'CEO',
+    'HR Manager',
+    'HR Executive',
+    'Sales Head',
+    'Sales Executive',
+    'Accounts Head',
+    'Senior Accountant',
+    'Procurement Head',
+    'Purchase Executive',
+    'Dispatch Head',
+    'Logistics Coordinator',
+    'Chief Structural Engineer',
+    'Lead CAD Designer',
+    'Junior Draftsman',
+    'Finance Manager',
+    'Technical Support Lead'
+  ],
+  employmentTypes: [
+    'Full-Time Regular',
+    'Contractual Project Basis',
+    'Site Deputation',
+    'Probationary Associate'
+  ],
+  workLocations: [
+    'Chennai HQ'
+  ],
+  reportingManagers: [
+    { id: 'EMP-000', name: 'Velmurugan', department: 'HR' },
+    { id: 'EMP-001', name: 'Pavithra', department: 'HR' },
+    { id: 'EMP-008', name: 'Rajesh Kannan', department: 'Sales' },
+    { id: 'EMP-007', name: 'Priya Natarajan', department: 'Accounts' }
+  ],
+  teams: [
+    { id: 'TM-01', name: 'Executive & HR Team', departmentId: 'HR', leadEmployeeName: 'Pavithra' },
+    { id: 'TM-02', name: 'Commercial Sales Squad', departmentId: 'Sales', leadEmployeeName: 'Rajesh Kannan' },
+    { id: 'TM-03', name: 'Accounts & Auditing', departmentId: 'Accounts', leadEmployeeName: 'Priya Natarajan' },
+    { id: 'TM-04', name: 'Technical Support & Systems', departmentId: 'Technical Support', leadEmployeeName: 'Arvind Babu' }
+  ]
+};
+
+export const DEFAULT_MASTER_ATTENDANCE_POLICIES: AttendancePolicy[] = [
+  {
+    id: 'AP-STD-01',
+    policyName: 'General Corporate Late Attendance & Grace Policy',
+    description: '10-minute grace period with tiered count-based deductions for late punches.',
+    applicableEmployees: 'ALL',
+    applicableDepartments: 'ALL',
+    applicableBranches: 'ALL',
+    effectiveFrom: '2026-01-01',
+    status: 'Active',
+    version: 1,
+
+    shiftName: 'General Day Shift (9:30 AM - 6:30 PM)',
+    startTime: '09:30',
+    endTime: '18:30',
+    graceTimeMinutes: 10,
+    minWorkingHours: 8,
+    halfDayHours: 4,
+    fullDayHours: 8.5,
+    weeklyOff: ['Sunday'],
+    holidayCalendar: 'HQ Corporate Calendar 2026',
+
+    lateRuleType: 'COUNT_BASED',
+    countTiers: [
+      { id: 'ct1', minCount: 1, maxCount: 3, deductionPerOccurrence: 0 },
+      { id: 'ct2', minCount: 4, maxCount: 5, deductionPerOccurrence: 100 },
+      { id: 'ct3', minCount: 6, maxCount: null, deductionPerOccurrence: 200 }
+    ],
+    halfDayLateHoursThreshold: 3,
+    customFormula: '(LATE_COUNT * 100)',
+
+    deductionVisibility: 'GENERIC',
+    genericCategoryLabel: 'OTHERS',
+
+    createdAt: '2026-01-01T09:00:00.000Z',
+    createdBy: 'Rajesh Sharma (CEO)',
+    updatedAt: '2026-08-01T10:00:00.000Z',
+    updatedBy: 'Ananya Verma (HR)'
+  },
+  {
+    id: 'AP-SITE-02',
+    policyName: 'Site Construction Strict Punctuality Policy',
+    description: 'Fixed ₹100 deduction on every late check-in with 5-minute grace period for construction supervisors.',
+    applicableEmployees: 'ALL',
+    applicableDepartments: ['Civil & Structural Engineering', 'Plant & Machinery'],
+    applicableBranches: ['BR-CBE-02'],
+    effectiveFrom: '2026-02-01',
+    status: 'Inactive',
+    version: 1,
+
+    shiftName: 'Early Site Shift (8:30 AM - 5:30 PM)',
+    startTime: '08:30',
+    endTime: '17:30',
+    graceTimeMinutes: 5,
+    minWorkingHours: 8.5,
+    halfDayHours: 4,
+    fullDayHours: 9,
+    weeklyOff: ['Sunday'],
+    holidayCalendar: 'Site Construction Calendar',
+
+    lateRuleType: 'FIXED_AMOUNT',
+    fixedAmount: 100,
+
+    deductionVisibility: 'GENERIC',
+    genericCategoryLabel: 'OTHERS',
+
+    createdAt: '2026-02-01T09:00:00.000Z',
+    createdBy: 'Ananya Verma (HR)',
+    updatedAt: '2026-07-15T12:00:00.000Z',
+    updatedBy: 'Ananya Verma (HR)'
+  }
+];
+
+export const INITIAL_ATTENDANCE_CORRECTIONS: AttendanceCorrectionRequest[] = [
+  {
+    id: 'ACR-2026-001',
+    employeeId: 'EMP-001',
+    employeeName: 'Rajesh Sharma',
+    department: 'Management & Executive',
+    date: '2026-08-25',
+    missingType: 'Check In',
+    requestedCheckIn: '09:32',
+    requestedCheckOut: '18:35',
+    reason: 'Biometric face scan portal was undergoing network calibration upon entry.',
+    status: 'Approved',
+    submittedAt: '2026-08-25T10:00:00.000Z',
+    reviewedBy: 'Ananya Verma (HR)',
+    reviewedAt: '2026-08-25T11:30:00.000Z',
+    hrComment: 'Verified with security entry log. Approved at 9:32 AM.',
+    adjustedCheckIn: '09:32'
+  },
+  {
+    id: 'ACR-2026-002',
+    employeeId: 'EMP-002',
+    employeeName: 'Priya Sundaram',
+    department: 'Civil & Structural Engineering',
+    date: '2026-08-28',
+    missingType: 'Full Attendance',
+    requestedCheckIn: '09:20',
+    requestedCheckOut: '18:45',
+    reason: 'Visited metro casting yard site for client structural inspection directly in the morning.',
+    status: 'Pending',
+    submittedAt: '2026-08-28T19:10:00.000Z'
+  }
+];
+
+export const DEFAULT_MASTER_LEAVE_POLICIES: MasterLeavePolicy[] = [
+  {
+    id: 'LP-MASTER-01',
+    policyName: 'Corporate Master Leave & Unpaid Policy 2026',
+    description: 'Provides 1 free unpaid leave per calendar month. Additional unpaid leaves incur 1 day salary deduction.',
+    applicableEmployees: 'ALL',
+    applicableDepartments: 'ALL',
+    applicableBranches: 'ALL',
+    effectiveDate: '2026-01-01',
+    status: 'Active',
+    version: 1,
+
+    leaveTypes: [
+      { id: 'lt-cl', name: 'Casual Leave', isPaid: true, quotaPerYear: 12, description: 'Short planned personal leave', color: '#0E7490' },
+      { id: 'lt-sl', name: 'Sick Leave', isPaid: true, quotaPerYear: 10, description: 'Medical recovery leave', color: '#22C55E' },
+      { id: 'lt-pl', name: 'Paid Leave', isPaid: true, quotaPerYear: 15, description: 'Annual privileged holiday leave', color: '#3B82F6' },
+      { id: 'lt-ul', name: 'Unpaid Leave', isPaid: false, quotaPerYear: 12, description: 'Loss of pay leave beyond paid quotas', color: '#EF4444' },
+      { id: 'lt-el', name: 'Earned Leave', isPaid: true, quotaPerYear: 18, description: 'Accrued long leave', color: '#8B5CF6' },
+      { id: 'lt-ml', name: 'Maternity Leave', isPaid: true, quotaPerYear: 180, description: 'Statutory maternity leave for women staff', color: '#EC4899' },
+      { id: 'lt-pt', name: 'Paternity Leave', isPaid: true, quotaPerYear: 15, description: 'New father support leave', color: '#14B8A6' },
+      { id: 'lt-co', name: 'Compensatory Leave', isPaid: true, quotaPerYear: 12, description: 'Comp-off for weekend project work', color: '#F59E0B' }
+    ],
+
+    monthlyFreeUnpaidLeaves: 1,
+    deductionRuleType: 'DAILY_SALARY',
+    dailySalaryMultiplier: 1,
+    customFormula: '(DAILY_SALARY * UNPAID_DAYS)',
+
+    approvalFlow: 'EMPLOYEE_HR',
+
+    deductionVisibility: 'GENERIC',
+    genericCategoryLabel: 'OTHERS',
+
+    createdAt: '2026-01-01T09:00:00.000Z',
+    createdBy: 'Rajesh Sharma (CEO)',
+    updatedAt: '2026-08-01T10:00:00.000Z',
+    updatedBy: 'Ananya Verma (HR)'
+  }
+];
+
+export const INITIAL_PAYROLL_CONFIG: PayrollSettingsConfig = {
+  components: [
+    { id: 'c-hra', name: 'House Rent Allowance (HRA)', code: 'HRA', type: 'EARNING', calculationMethod: 'PERCENTAGE', defaultValue: 40, percentageBase: 'BASIC', isStatutory: false, active: true, isConfidential: false, description: '40% of individual employee Basic salary for housing' },
+    { id: 'c-conv', name: 'Conveyance Allowance', code: 'CONV', type: 'EARNING', calculationMethod: 'FIXED_AMOUNT', defaultValue: 1600, isStatutory: false, active: true, isConfidential: false, description: 'Monthly transportation stipend' },
+    { id: 'c-med', name: 'Medical Allowance', code: 'MED', type: 'EARNING', calculationMethod: 'FIXED_AMOUNT', defaultValue: 1250, isStatutory: false, active: true, isConfidential: false, description: 'Tax-exempt medical reimbursement allowance' },
+    { id: 'c-spec', name: 'Special Allowance', code: 'SPEC', type: 'EARNING', calculationMethod: 'FIXED_AMOUNT', defaultValue: 2500, isStatutory: false, active: true, isConfidential: false, description: 'Residual balancing allowance component' },
+    { id: 'c-bonus', name: 'Performance Bonus', code: 'BONUS', type: 'EARNING', calculationMethod: 'FIXED_AMOUNT', defaultValue: 0, isStatutory: false, active: true, isConfidential: false, description: 'Variable project performance payout' },
+    { id: 'c-reward', name: 'Rewards & Recognition', code: 'REWARD', type: 'EARNING', calculationMethod: 'FIXED_AMOUNT', defaultValue: 0, isStatutory: false, active: true, isConfidential: false, description: 'Monthly award earnings routed from Settings Rewards' },
+
+    // Deductions
+    { id: 'c-pf', name: 'Employee Provident Fund (EPF)', code: 'EPF', type: 'DEDUCTION', calculationMethod: 'PERCENTAGE', defaultValue: 12, percentageBase: 'BASIC', isStatutory: true, active: true, isConfidential: false, description: 'Statutory 12% PF contribution under EPFO rules' },
+    { id: 'c-esi', name: 'Employees State Insurance (ESIC)', code: 'ESIC', type: 'DEDUCTION', calculationMethod: 'PERCENTAGE', defaultValue: 0.75, percentageBase: 'GROSS', isStatutory: true, active: true, isConfidential: false, description: 'Statutory 0.75% contribution for wage <= ₹21,000' },
+    { id: 'c-pt', name: 'Professional Tax (PT)', code: 'PT', type: 'DEDUCTION', calculationMethod: 'FIXED_AMOUNT', defaultValue: 200, isStatutory: true, active: true, isConfidential: false, description: 'State government professional tax deduction' },
+    { id: 'c-adv', name: 'Advance Salary Recovery', code: 'ADV_REC', type: 'DEDUCTION', calculationMethod: 'FIXED_AMOUNT', defaultValue: 0, isStatutory: false, active: true, isConfidential: false, description: 'Monthly EMI recovery for approved advance salary' },
+    { id: 'c-late', name: 'Late Attendance Deduction', code: 'LATE_DED', type: 'DEDUCTION', calculationMethod: 'FORMULA', defaultValue: 0, formula: '(LATE_COUNT * 100)', isStatutory: false, active: true, isConfidential: true, description: 'Deduction generated dynamically from Attendance Policy' },
+    { id: 'c-lop', name: 'Unpaid Leave Deduction', code: 'LOP_DED', type: 'DEDUCTION', calculationMethod: 'FORMULA', defaultValue: 0, formula: '(DAILY_SALARY * UNPAID_DAYS)', isStatutory: false, active: true, isConfidential: true, description: 'Deduction calculated dynamically from Leave Policy' }
+  ],
+
+  pfPolicy: {
+    active: true,
+    calculationType: 'PERCENTAGE',
+    percentage: 12,
+    calculationBase: 'BASIC',
+    formula: 'BASIC * 12 / 100',
+    effectiveDate: '2026-01-01',
+    version: 1
+  },
+
+  esicPolicy: {
+    active: true,
+    percentage: 0.75,
+    grossSalaryLimit: 21000,
+    formula: 'GROSS * 0.75 / 100',
+    effectiveDate: '2026-01-01',
+    version: 1
+  },
+
+  incrementPolicy: {
+    active: true,
+    cycle: 'Annual Appraisal Cycle (April)',
+    effectiveMonth: 'April',
+    standardBaseIncrement: 8,
+    allowManagerRecommendation: true,
+    slabs: [
+      { id: 'inc-1', name: 'Top Performer (Rating 4.8 - 5.0)', ratingMin: 4.8, ratingMax: 5.0, incrementPercentage: 18, applicableCadre: 'All Confirmed Staff', effectiveCycle: 'April Annual Appraisal', status: 'Active' },
+      { id: 'inc-2', name: 'Exceeds Expectations (Rating 4.0 - 4.7)', ratingMin: 4.0, ratingMax: 4.7, incrementPercentage: 12, applicableCadre: 'All Confirmed Staff', effectiveCycle: 'April Annual Appraisal', status: 'Active' },
+      { id: 'inc-3', name: 'Meets Expectations (Rating 3.0 - 3.9)', ratingMin: 3.0, ratingMax: 3.9, incrementPercentage: 8, applicableCadre: 'All Confirmed Staff', effectiveCycle: 'April Annual Appraisal', status: 'Active' },
+      { id: 'inc-4', name: 'Developing / Needs Improvement (< 3.0)', ratingMin: 0, ratingMax: 2.9, incrementPercentage: 0, applicableCadre: 'All Confirmed Staff', effectiveCycle: 'April Annual Appraisal', status: 'Active' }
+    ]
+  },
+
+  standardWorkingDaysPerMonth: 26,
+  payrollCycleDay: 1,
+  enableProfessionalTax: true,
+  standardPtAmount: 200,
+  updatedAt: '2026-08-01T10:00:00.000Z',
+  updatedBy: 'Ananya Verma (HR)'
+};
+
+export const INITIAL_REWARD_POLICIES: RewardPolicy[] = [
+  {
+    id: 'RP-ATT-01',
+    rewardName: 'Monthly 100% Attendance & Punctuality Reward',
+    rewardType: 'Attendance Reward',
+    description: 'Monthly incentive of ₹1,000 awarded for 100% presence — zero leaves, zero unplanned absent days, and zero late check-ins in the calendar month.',
+    applicableEmployees: 'ALL',
+    applicableDepartments: 'ALL',
+    eligibilityRule: 'Zero leaves, zero absent days, and zero late marks in the calendar month (100% attendance)',
+    valueType: 'FIXED_AMOUNT',
+    amountValue: 1000,
+    addToPayroll: true,
+    status: 'Active',
+    version: 1,
+    createdAt: '2026-01-01T09:00:00.000Z',
+    createdBy: 'Ananya Verma (HR)',
+    updatedAt: '2026-09-10T10:00:00.000Z',
+    updatedBy: 'Ananya Verma (HR)'
+  }
+];
+
+export const INITIAL_EMPLOYEE_REWARDS: EmployeeRewardRecord[] = [
+  {
+    id: 'ERR-2026-08-01',
+    rewardPolicyId: 'RP-ATT-01',
+    rewardName: 'Monthly 100% Attendance & Punctuality Reward',
+    rewardType: 'Attendance Reward',
+    employeeId: 'EMP-001',
+    employeeName: 'Rajesh Sharma',
+    department: 'Management & Executive',
+    valueType: 'FIXED_AMOUNT',
+    amount: 1000,
+    grantedDate: '2026-08-31',
+    grantedBy: 'HR Administration',
+    addToPayroll: true,
+    payrollStatus: 'Pending',
+    notes: 'Achieved 100% monthly attendance with 0 leaves, 0 absences, and 0 late check-ins.'
+  }
+];
+
+export const INITIAL_POLICY_AUDIT_LOGS: PolicyAuditLog[] = [
+  {
+    id: 'LOG-001',
+    policyCategory: 'Company Details',
+    policyId: 'COMP-ROOT',
+    policyName: 'VRM Industrial Structures Private Limited',
+    action: 'EDIT',
+    performedBy: 'Rajesh Sharma',
+    performedByRole: 'CEO',
+    timestamp: '2026-08-15 14:30:00',
+    changeSummary: 'Updated official GSTIN and registered corporate email address.',
+    oldValues: { officialEmail: 'contact@vrmstructures.com' },
+    newValues: { officialEmail: 'corporate@vrmstructures.com' }
+  },
+  {
+    id: 'LOG-002',
+    policyCategory: 'Attendance & Time',
+    policyId: 'AP-STD-01',
+    policyName: 'General Corporate Late Attendance & Grace Policy',
+    action: 'CREATE',
+    performedBy: 'Ananya Verma',
+    performedByRole: 'HR',
+    timestamp: '2026-08-01 10:00:00',
+    changeSummary: 'Created tiered count-based late deduction policy (1-3 free, 4-5 ₹100, 6+ ₹200).',
+    newValues: { graceTimeMinutes: 10, lateRuleType: 'COUNT_BASED' }
+  },
+  {
+    id: 'LOG-003',
+    policyCategory: 'Leave Management',
+    policyId: 'LP-MASTER-01',
+    policyName: 'Corporate Master Leave & Unpaid Policy 2026',
+    action: 'CREATE',
+    performedBy: 'Ananya Verma',
+    performedByRole: 'HR',
+    timestamp: '2026-08-01 10:05:00',
+    changeSummary: 'Enacted 1 monthly free unpaid leave with daily salary deduction thereafter.',
+    newValues: { monthlyFreeUnpaidLeaves: 1, deductionRuleType: 'DAILY_SALARY' }
+  },
+  {
+    id: 'LOG-004',
+    policyCategory: 'Rewards & Recognition',
+    policyId: 'RP-EOM-01',
+    policyName: 'Employee of the Month',
+    action: 'CREATE',
+    performedBy: 'Rajesh Sharma',
+    performedByRole: 'CEO',
+    timestamp: '2026-08-01 10:15:00',
+    changeSummary: 'Created ₹5,000 monthly reward policy connected to payroll earnings.',
+    newValues: { amountValue: 5000, addToPayroll: true }
+  }
+];
