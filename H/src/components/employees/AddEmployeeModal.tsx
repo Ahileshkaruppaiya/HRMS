@@ -117,7 +117,7 @@ export const AddEmployeeModal: React.FC<AddEmployeeModalProps> = ({
 
   const defaultFormData = {
     // 1. Personal Information
-    employeeId: generateNewEmpId(),
+    employeeId: '',
     firstName: '',
     lastName: '',
     avatar: '',
@@ -246,10 +246,9 @@ export const AddEmployeeModal: React.FC<AddEmployeeModalProps> = ({
   useEffect(() => {
     if (isOpen) {
       setStep(1);
-      const newId = generateNewEmpId();
       setFormData({
         ...defaultFormData,
-        employeeId: newId,
+        employeeId: '',
         department: departments[0]?.name || 'HR'
       });
       setIsSuccess(false);
@@ -717,50 +716,23 @@ export const AddEmployeeModal: React.FC<AddEmployeeModalProps> = ({
                   Employee ID <span className="required-star">*</span>
                 </label>
 
-                <div style={{ display: 'flex', gap: '8px' }}>
-                  <input 
-                    className="form-control" 
-                    value={formData.employeeId} 
-                    onChange={e => handleChange('employeeId', e.target.value.toUpperCase())}
-                    placeholder="Enter Employee ID (e.g. EMP-020, VRM-101)"
-                    style={{ 
-                      fontWeight: 700, 
-                      letterSpacing: '0.04em',
-                      borderColor: formData.employeeId.trim() && employees.some(e => e.employeeId.toLowerCase() === formData.employeeId.trim().toLowerCase()) 
-                        ? '#EF4444' 
-                        : undefined
-                    }}
-                  />
-                  <button 
-                    type="button" 
-                    className="btn btn-secondary" 
-                    onClick={() => {
-                      const freshId = generateNewEmpId();
-                      handleChange('employeeId', freshId);
-                    }}
-                    title="Click to auto-generate next ID"
-                    style={{ 
-                      display: 'flex', 
-                      alignItems: 'center', 
-                      gap: '6px', 
-                      whiteSpace: 'nowrap', 
-                      fontSize: '12px', 
-                      padding: '0 12px',
-                      flexShrink: 0
-                    }}
-                  >
-                    <RefreshCw size={13} />
-                    <span>Auto Generate</span>
-                  </button>
-                </div>
+                <input 
+                  className="form-control" 
+                  value={formData.employeeId} 
+                  onChange={e => handleChange('employeeId', e.target.value.toUpperCase())}
+                  placeholder="Enter Employee ID (e.g. EMP-020, VRM-101)"
+                  style={{ 
+                    fontWeight: 700, 
+                    letterSpacing: '0.04em',
+                    borderColor: formData.employeeId.trim() && employees.some(e => e.employeeId.toLowerCase() === formData.employeeId.trim().toLowerCase()) 
+                      ? '#EF4444' 
+                      : undefined
+                  }}
+                />
 
-                {formData.employeeId.trim() && employees.some(e => e.employeeId.toLowerCase() === formData.employeeId.trim().toLowerCase()) ? (
+                {formData.employeeId.trim() && employees.some(e => e.employeeId.toLowerCase() === formData.employeeId.trim().toLowerCase()) && (
                   <div style={{ marginTop: '5px', fontSize: '11px', color: '#EF4444', fontWeight: 600 }}>
                     ⚠️ Employee ID &quot;{formData.employeeId}&quot; is already in use by another employee!
-                  </div>
-                ) : (
-                  <div style={{ marginTop: '5px', fontSize: '11px', color: '#64748B' }}>
-                    Type any custom ID manually (e.g. EMP-020, VRM-101), or click <strong>Auto Generate</strong>.
                   </div>
                 )}
               </div>
