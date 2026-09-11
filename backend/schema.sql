@@ -1,8 +1,21 @@
 -- ============================================================
--- ApexHRMS — Production Supabase Database Schema (Corrected & Enhanced)
+-- ApexHRMS — Supabase Database Schema (Corrected)
 -- Targets: PostgreSQL 15+ / Supabase
 -- Safely re-runnable: all definitions are CREATE IF NOT EXISTS
 --   / DROP IF EXISTS / ON CONFLICT DO NOTHING.
+-- Notes:
+--   * All PKs & FKs are UUID.
+--   * Auth link: employees.auth_id -> auth.users(id).
+--   * Historical HR records are protected (RESTRICT / SET NULL,
+--     never CASCADE off employees).
+--   * Frontend fields NOT dropped without a replacement
+--     (see performance.goal_achievement & performance_history).
+--   * MONEY & ALL NUMERIC VALUES are DOUBLE PRECISION (float8) so that
+--     PostgREST / Supabase JSON serializes them as native numbers
+--     (a `numeric` column is returned as a STRING by the API, which
+--     breaks client-side arithmetic). Business calculations that
+--     must not be trusted to the frontend live in DB functions/triggers
+--     (e.g. calculate_attendance_hours()).
 -- ============================================================
 
 BEGIN;
@@ -27,6 +40,7 @@ END;
 $$ LANGUAGE plpgsql;
 
 -- Compute working_hours from check_in/check_out on the server
+-- (frontend must NOT be trusted to calculate it blindly).
 CREATE OR REPLACE FUNCTION public.calculate_attendance_hours()
 RETURNS TRIGGER AS $$
 BEGIN
@@ -42,42 +56,10 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
--- Guards against recursion in RLS policies
-CREATE OR REPLACE FUNCTION public.get_current_employee_id()
-RETURNS UUID AS $$
-    SELECT id FROM public.employees WHERE auth_id = auth.uid() LIMIT 1;
-$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public;
 
-CREATE OR REPLACE FUNCTION public.get_current_role_key()
-RETURNS TEXT AS $$
-    SELECT r.key
-    FROM public.employees e
-    JOIN public.roles r ON r.id = e.role_id
-    WHERE e.auth_id = auth.uid()
-    LIMIT 1;
-$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public;
-
--- RBAC engine: does the current user's role allow <module:action>?
-CREATE OR REPLACE FUNCTION public.has_permission(p_module TEXT, p_action TEXT)
-RETURNS BOOLEAN AS $$
-    SELECT EXISTS (
-        SELECT 1
-        FROM public.employees e
-        JOIN public.permissions p ON p.role_id = e.role_id
-        WHERE e.auth_id = auth.uid()
-          AND p.module = p_module
-          AND p.action = p_action
-    );
-$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public;
-
--- Convenience: is current user Super Admin or HR Admin?
-CREATE OR REPLACE FUNCTION public.is_admin()
-RETURNS BOOLEAN AS $$
-    SELECT public.get_current_role_key() IN ('super_admin', 'hr_admin');
-$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public;
 
 -- ============================================================
--- 2. Enumerated Types
+-- 2. Enumerated Types (enforce valid values at the DB layer)
 -- ============================================================
 DROP TYPE IF EXISTS public.hr_employment_type CASCADE;
 CREATE TYPE public.hr_employment_type AS ENUM ('Full-Time', 'Part-Time', 'Contract', 'Intern');
@@ -126,7 +108,7 @@ CREATE TABLE IF NOT EXISTS public.roles (
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
--- --- permissions (normalized RBAC) ---
+-- --- permissions (normalized RBAC: one row per role/module/action) ---
 CREATE TABLE IF NOT EXISTS public.permissions (
     id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     role_id    UUID NOT NULL REFERENCES public.roles(id) ON DELETE CASCADE,
@@ -136,13 +118,13 @@ CREATE TABLE IF NOT EXISTS public.permissions (
     CONSTRAINT unique_role_module_action UNIQUE (role_id, module, action)
 );
 
--- --- departments (circular FK head_id added below) ---
+-- --- departments (head_id added as deferred circular FK below) ---
 CREATE TABLE IF NOT EXISTS public.departments (
     id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     name       TEXT NOT NULL,
     code       TEXT NOT NULL UNIQUE,
     head_id    UUID,
-    budget     NUMERIC(15,2) NOT NULL DEFAULT 0.00,
+    budget     DOUBLE PRECISION NOT NULL DEFAULT 0.00,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
@@ -162,16 +144,19 @@ CREATE TABLE IF NOT EXISTS public.employees (
     department_id       UUID REFERENCES public.departments(id) ON DELETE SET NULL,
     designation         TEXT,
     reporting_manager_id UUID REFERENCES public.employees(id) ON DELETE SET NULL,
-    reporting_manager_name TEXT, -- kept for 100% frontend compatibility
+    -- Denormalized display name for the reporting manager (kept; the
+    -- frontend add-employee form submits it as free text and the list/
+    -- profile views read it directly — see EmployeeList/EmployeeProfile).
+    reporting_manager_name TEXT,
     joining_date        DATE,
     employment_type     public.hr_employment_type NOT NULL DEFAULT 'Full-Time',
     status              public.hr_employee_status NOT NULL DEFAULT 'Active',
     avatar_url          TEXT,
-    basic_salary        NUMERIC(12,2) NOT NULL DEFAULT 0.00,
-    allowances_hra      NUMERIC(12,2) NOT NULL DEFAULT 0.00,
-    allowances_transport NUMERIC(12,2) NOT NULL DEFAULT 0.00,
-    allowances_medical  NUMERIC(12,2) NOT NULL DEFAULT 0.00,
-    allowances_special  NUMERIC(12,2) NOT NULL DEFAULT 0.00,
+    basic_salary        DOUBLE PRECISION NOT NULL DEFAULT 0.00,
+    allowances_hra      DOUBLE PRECISION NOT NULL DEFAULT 0.00,
+    allowances_transport DOUBLE PRECISION NOT NULL DEFAULT 0.00,
+    allowances_medical  DOUBLE PRECISION NOT NULL DEFAULT 0.00,
+    allowances_special  DOUBLE PRECISION NOT NULL DEFAULT 0.00,
     bank_name           TEXT,
     account_number      TEXT,
     ifsc_code           TEXT,
@@ -185,12 +170,59 @@ CREATE TABLE IF NOT EXISTS public.employees (
     updated_at          TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
--- Circular FK Constraint
+-- Circular FK: departments.head_id -> employees.id
 ALTER TABLE public.departments
     DROP CONSTRAINT IF EXISTS fk_departments_head;
 ALTER TABLE public.departments
     ADD CONSTRAINT fk_departments_head
     FOREIGN KEY (head_id) REFERENCES public.employees(id) ON DELETE SET NULL;
+
+-- ============================================================
+-- 3b. RBAC and Auth Helper Functions (require employees, roles, permissions)
+-- ============================================================
+-- Guards against recursion in RLS policies: reads are SECURITY DEFINER
+-- so they run with the definer's privileges and read the permission
+-- tables without triggering their own RLS.
+CREATE OR REPLACE FUNCTION public.get_employee_row()
+RETURNS public.employees AS $$
+    SELECT *
+    FROM public.employees
+    WHERE auth_id = auth.uid()
+    LIMIT 1;
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public;
+
+CREATE OR REPLACE FUNCTION public.get_current_employee_id()
+RETURNS UUID AS $$
+    SELECT id FROM public.employees WHERE auth_id = auth.uid() LIMIT 1;
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public;
+
+CREATE OR REPLACE FUNCTION public.get_current_role_key()
+RETURNS TEXT AS $$
+    SELECT r.key
+    FROM public.employees e
+    JOIN public.roles r ON r.id = e.role_id
+    WHERE e.auth_id = auth.uid()
+    LIMIT 1;
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public;
+
+-- RBAC engine: does the current user's role allow <module:action>?
+CREATE OR REPLACE FUNCTION public.has_permission(p_module TEXT, p_action TEXT)
+RETURNS BOOLEAN AS $$
+    SELECT EXISTS (
+        SELECT 1
+        FROM public.employees e
+        JOIN public.permissions p ON p.role_id = e.role_id
+        WHERE e.auth_id = auth.uid()
+          AND p.module = p_module
+          AND p.action = p_action
+    );
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public;
+
+-- Convenience: is the current user a Super Admin or HR Admin?
+CREATE OR REPLACE FUNCTION public.is_admin()
+RETURNS BOOLEAN AS $$
+    SELECT public.get_current_role_key() IN ('super_admin', 'hr_admin');
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public;
 
 -- --- designations ---
 CREATE TABLE IF NOT EXISTS public.designations (
@@ -202,13 +234,13 @@ CREATE TABLE IF NOT EXISTS public.designations (
     updated_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
--- --- employee_documents ---
+-- --- employee_documents (file metadata; files live in Supabase Storage) ---
 CREATE TABLE IF NOT EXISTS public.employee_documents (
     id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     employee_id UUID NOT NULL REFERENCES public.employees(id) ON DELETE CASCADE,
     name        TEXT NOT NULL,
     type        TEXT,
-    url         TEXT NOT NULL,
+    url         TEXT NOT NULL, -- storage path e.g. employee-documents/<emp>/<file>
     upload_date DATE NOT NULL DEFAULT CURRENT_DATE,
     created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
@@ -220,11 +252,11 @@ CREATE TABLE IF NOT EXISTS public.attendance_records (
     date             DATE NOT NULL,
     check_in         TIMESTAMPTZ,
     check_out        TIMESTAMPTZ,
-    working_hours    NUMERIC(5,2) NOT NULL DEFAULT 0.00,
+    working_hours    DOUBLE PRECISION NOT NULL DEFAULT 0.00,
     status           public.hr_attendance_status NOT NULL DEFAULT 'Present',
     late_status      TEXT NOT NULL DEFAULT 'On Time',
-    location_lat     NUMERIC(10,8),
-    location_lng     NUMERIC(11,8),
+    location_lat     DOUBLE PRECISION,
+    location_lng     DOUBLE PRECISION,
     location_address TEXT,
     in_geofence      BOOLEAN NOT NULL DEFAULT TRUE,
     face_verified    BOOLEAN NOT NULL DEFAULT FALSE,
@@ -239,10 +271,10 @@ CREATE TABLE IF NOT EXISTS public.face_logs (
     id               UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     employee_id      UUID NOT NULL REFERENCES public.employees(id) ON DELETE CASCADE,
     timestamp        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    type             TEXT NOT NULL,
-    status           TEXT NOT NULL,
-    photo_url        TEXT,
-    confidence_score NUMERIC(5,2),
+    type             TEXT NOT NULL, -- Check-In / Check-Out
+    status           TEXT NOT NULL, -- Success / No Match / Spoof Detected
+    photo_url        TEXT,          -- storage path face-photos/...
+    confidence_score DOUBLE PRECISION,
     created_at       TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
@@ -271,14 +303,14 @@ CREATE TABLE IF NOT EXISTS public.shifts (
     start_time         TIME NOT NULL,
     end_time           TIME NOT NULL,
     break_duration_mins INT NOT NULL DEFAULT 0,
-    working_hours      NUMERIC(4,2) NOT NULL DEFAULT 8.00,
+    working_hours      DOUBLE PRECISION NOT NULL DEFAULT 8.00,
     grace_period_mins  INT NOT NULL DEFAULT 15,
     color              TEXT NOT NULL DEFAULT '#3B82F6',
     created_at         TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at         TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
--- --- shift_assignments ---
+-- --- shift_assignments (join: shifts <-> employees) ---
 CREATE TABLE IF NOT EXISTS public.shift_assignments (
     id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     shift_id    UUID NOT NULL REFERENCES public.shifts(id) ON DELETE CASCADE,
@@ -478,28 +510,30 @@ CREATE TABLE IF NOT EXISTS public.task_masters (
 );
 
 -- --- performance_scores ---
+-- NOTE: goal_achievement is retained because PerformanceTracking.tsx
+-- reads PerformanceScore.goalAchievement directly (must not be dropped).
 CREATE TABLE IF NOT EXISTS public.performance_scores (
     id                   UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     employee_id          UUID NOT NULL REFERENCES public.employees(id) ON DELETE RESTRICT,
-    overall_score        NUMERIC(5,2) NOT NULL DEFAULT 0.00,
-    task_completion_rate NUMERIC(5,2) NOT NULL DEFAULT 0.00,
-    attendance_score     NUMERIC(5,2) NOT NULL DEFAULT 0.00,
-    goal_achievement     NUMERIC(5,2) NOT NULL DEFAULT 0.00,
-    manager_rating       NUMERIC(3,2) NOT NULL DEFAULT 0.00,
+    overall_score        DOUBLE PRECISION NOT NULL DEFAULT 0.00,
+    task_completion_rate DOUBLE PRECISION NOT NULL DEFAULT 0.00,
+    attendance_score     DOUBLE PRECISION NOT NULL DEFAULT 0.00,
+    goal_achievement     DOUBLE PRECISION NOT NULL DEFAULT 0.00,
+    manager_rating       DOUBLE PRECISION NOT NULL DEFAULT 0.00,
     avatar_url           TEXT,
-    period               TEXT NOT NULL,
+    period               TEXT NOT NULL, -- e.g. "2026-08"
     created_at           TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at           TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     CONSTRAINT unique_employee_period UNIQUE (employee_id, period)
 );
 
--- --- performance_history (replaces monthlyHistory[]) ---
+-- --- performance_history (replaces PerformanceScore.monthlyHistory[]) ---
 CREATE TABLE IF NOT EXISTS public.performance_history (
-    id             UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     performance_id UUID NOT NULL REFERENCES public.performance_scores(id) ON DELETE CASCADE,
-    month          TEXT NOT NULL,
-    score          NUMERIC(5,2) NOT NULL,
-    created_at     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    month      TEXT NOT NULL,          -- e.g. "Aug"
+    score      DOUBLE PRECISION NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     CONSTRAINT unique_performance_month UNIQUE (performance_id, month)
 );
 
@@ -531,8 +565,8 @@ CREATE TABLE IF NOT EXISTS public.candidates (
     applied_date        DATE NOT NULL DEFAULT CURRENT_DATE,
     referrer_employee_id UUID REFERENCES public.employees(id) ON DELETE SET NULL,
     referrer_name       TEXT,
-    resume_url          TEXT,
-    rating              NUMERIC(3,2) NOT NULL DEFAULT 0.0,
+    resume_url          TEXT, -- storage path resumes/...
+    rating              DOUBLE PRECISION NOT NULL DEFAULT 0.0,
     notes               TEXT,
     created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at          TIMESTAMPTZ NOT NULL DEFAULT NOW()
@@ -543,17 +577,17 @@ CREATE TABLE IF NOT EXISTS public.expenses (
     id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     employee_id UUID NOT NULL REFERENCES public.employees(id) ON DELETE RESTRICT,
     category    TEXT NOT NULL,
-    amount      NUMERIC(12,2) NOT NULL CHECK (amount >= 0),
+    amount      DOUBLE PRECISION NOT NULL CHECK (amount >= 0),
     date        DATE NOT NULL,
     description TEXT,
-    receipt_url TEXT,
+    receipt_url TEXT, -- storage path receipts/...
     status      public.hr_expense_status NOT NULL DEFAULT 'Pending Manager',
     approved_by UUID REFERENCES public.employees(id) ON DELETE SET NULL,
     created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
--- --- notifications & notification_recipients ---
+-- --- notifications (broadcast-capable: many recipients via join) ---
 CREATE TABLE IF NOT EXISTS public.notifications (
     id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     title      TEXT NOT NULL,
@@ -574,21 +608,21 @@ CREATE TABLE IF NOT EXISTS public.notification_recipients (
     CONSTRAINT unique_notification_employee UNIQUE (notification_id, employee_id)
 );
 
--- --- payroll_records ---
+-- --- payroll_records (payroll_month = first day of month, e.g. 2026-08-01) ---
 CREATE TABLE IF NOT EXISTS public.payroll_records (
     id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     employee_id     UUID NOT NULL REFERENCES public.employees(id) ON DELETE RESTRICT,
     payroll_month   DATE NOT NULL,
-    basic_salary    NUMERIC(12,2) NOT NULL DEFAULT 0.00,
-    allowances      NUMERIC(12,2) NOT NULL DEFAULT 0.00,
-    bonus           NUMERIC(12,2) NOT NULL DEFAULT 0.00,
-    tax_deduction   NUMERIC(12,2) NOT NULL DEFAULT 0.00,
-    leave_deduction NUMERIC(12,2) NOT NULL DEFAULT 0.00,
+    basic_salary    DOUBLE PRECISION NOT NULL DEFAULT 0.00,
+    allowances      DOUBLE PRECISION NOT NULL DEFAULT 0.00,
+    bonus           DOUBLE PRECISION NOT NULL DEFAULT 0.00,
+    tax_deduction   DOUBLE PRECISION NOT NULL DEFAULT 0.00,
+    leave_deduction DOUBLE PRECISION NOT NULL DEFAULT 0.00,
     working_days    INT NOT NULL DEFAULT 0,
     present_days    INT NOT NULL DEFAULT 0,
     paid_leaves     INT NOT NULL DEFAULT 0,
     unpaid_leaves   INT NOT NULL DEFAULT 0,
-    net_salary      NUMERIC(12,2) NOT NULL DEFAULT 0.00,
+    net_salary      DOUBLE PRECISION NOT NULL DEFAULT 0.00,
     status          public.hr_payroll_status NOT NULL DEFAULT 'Pending',
     created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -606,7 +640,7 @@ CREATE TABLE IF NOT EXISTS public.assets (
     assigned_department_id UUID REFERENCES public.departments(id) ON DELETE SET NULL,
     assigned_date        DATE,
     purchase_date        DATE,
-    purchase_cost        NUMERIC(12,2) NOT NULL DEFAULT 0.00,
+    purchase_cost        DOUBLE PRECISION NOT NULL DEFAULT 0.00,
     warranty_expiry      DATE,
     status               public.hr_asset_status NOT NULL DEFAULT 'Available',
     condition            public.hr_asset_condition NOT NULL DEFAULT 'Good',
@@ -615,20 +649,20 @@ CREATE TABLE IF NOT EXISTS public.assets (
     updated_at           TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
--- --- geofence_config ---
+-- --- geofence_config (singleton row) ---
 CREATE TABLE IF NOT EXISTS public.geofence_config (
     id               UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     enabled          BOOLEAN NOT NULL DEFAULT TRUE,
     office_name      TEXT NOT NULL,
-    center_lat       NUMERIC(10,8) NOT NULL,
-    center_lng       NUMERIC(11,8) NOT NULL,
+    center_lat       DOUBLE PRECISION NOT NULL,
+    center_lng       DOUBLE PRECISION NOT NULL,
     radius_meters    INT NOT NULL CHECK (radius_meters > 0),
     enforce_strictly BOOLEAN NOT NULL DEFAULT TRUE,
     created_at       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at       TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
--- --- workflow_config ---
+-- --- workflow_config (singleton row) ---
 CREATE TABLE IF NOT EXISTS public.workflow_config (
     id                        UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     format                    public.hr_workflow_format NOT NULL DEFAULT 'MANAGER_HR_DUAL',
@@ -750,7 +784,7 @@ DROP TRIGGER IF EXISTS trg_mom_action_items_updated_at ON public.mom_action_item
 CREATE TRIGGER trg_mom_action_items_updated_at BEFORE UPDATE ON public.mom_action_items FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
 
 -- ============================================================
--- 5. Indexes
+-- 5. Indexes (frequently queried FKs / fields)
 -- ============================================================
 CREATE INDEX IF NOT EXISTS idx_employees_auth_id            ON public.employees(auth_id);
 CREATE INDEX IF NOT EXISTS idx_employees_department_id      ON public.employees(department_id);
@@ -770,9 +804,9 @@ CREATE INDEX IF NOT EXISTS idx_shift_assignments_shift      ON public.shift_assi
 CREATE INDEX IF NOT EXISTS idx_shift_assignments_employee   ON public.shift_assignments(employee_id);
 CREATE INDEX IF NOT EXISTS idx_shift_requests_employee      ON public.shift_requests(employee_id);
 
-CREATE INDEX IF NOT EXISTS idx_tasks_assigned_employee      ON public.tasks(assigned_employee_id);
+CREATE INDEX IF NOT EXISTS idx_tasks_responsible_person   ON public.tasks(responsible_person_id);
 CREATE INDEX IF NOT EXISTS idx_tasks_department             ON public.tasks(department_id);
-CREATE INDEX IF NOT EXISTS idx_tasks_status                 ON public.tasks(status);
+CREATE INDEX IF NOT EXISTS idx_tasks_status                 ON public.tasks(overall_status);
 
 CREATE INDEX IF NOT EXISTS idx_performance_employee         ON public.performance_scores(employee_id);
 CREATE INDEX IF NOT EXISTS idx_performance_period           ON public.performance_scores(period);
@@ -810,6 +844,9 @@ INSERT INTO public.roles (name, key) VALUES
     ('Employee',         'employee'),
     ('Finance Manager',  'finance_manager')
 ON CONFLICT (key) DO NOTHING;
+
+-- Permission matrix mirrors the frontend DEFAULT_PERMISSIONS in
+-- HRMSContext.tsx so no existing functionality is lost.
 
 -- Helper: bulk insert permission rows.
 CREATE OR REPLACE FUNCTION public.seed_permissions(
@@ -905,7 +942,7 @@ END $$;
 
 -- Seed singleton config rows.
 INSERT INTO public.geofence_config (enabled, office_name, center_lat, center_lng, radius_meters, enforce_strictly)
-VALUES (TRUE, 'VRM Structures India Pvt Ltd', 13.151968, 80.2086053, 50, TRUE)
+VALUES (TRUE, 'VRM Structures India Pvt Ltd', 13.151968, 80.2086053, 200, TRUE)
 ON CONFLICT DO NOTHING;
 
 INSERT INTO public.workflow_config (format, format_name, allow_employee_direct_edit, require_hr_acceptance)
@@ -916,6 +953,7 @@ ON CONFLICT DO NOTHING;
 -- 7. Row Level Security
 -- ============================================================
 
+-- Enable RLS on every application table (not storage).
 ALTER TABLE public.roles                  ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.permissions            ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.departments            ENABLE ROW LEVEL SECURITY;
@@ -941,10 +979,10 @@ ALTER TABLE public.assets                 ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.geofence_config        ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.workflow_config        ENABLE ROW LEVEL SECURITY;
 
--- Idempotent RLS cleanup
+-- Drop any pre-existing policies from prior runs (idempotent).
 DO $$
 DECLARE
-    r RECORD;
+    r RECORD; pol TEXT;
 BEGIN
     FOR r IN SELECT schemaname, tablename, policyname
              FROM pg_policies
@@ -954,13 +992,13 @@ BEGIN
     END LOOP;
 END $$;
 
--- Roles & Permissions
-CREATE POLICY roles_select       ON public.roles         FOR SELECT TO authenticated USING (TRUE);
+-- Roles & Permissions: visible to any authenticated user (read-only).
+CREATE POLICY roles_select      ON public.roles         FOR SELECT TO authenticated USING (TRUE);
 CREATE POLICY permissions_select ON public.permissions  FOR SELECT TO authenticated USING (TRUE);
 
--- Departments / Designations
-CREATE POLICY departments_select  ON public.departments  FOR SELECT TO authenticated USING (TRUE);
-CREATE POLICY departments_write   ON public.departments  FOR ALL    TO authenticated USING (public.has_permission('organization','edit'));
+-- Departments / Designations: read for all, write for org editors.
+CREATE POLICY departments_select ON public.departments  FOR SELECT TO authenticated USING (TRUE);
+CREATE POLICY departments_write  ON public.departments  FOR ALL    TO authenticated USING (public.has_permission('organization','edit'));
 CREATE POLICY designations_select ON public.designations FOR SELECT TO authenticated USING (TRUE);
 CREATE POLICY designations_write  ON public.designations FOR ALL    TO authenticated USING (public.has_permission('organization','edit'));
 
@@ -1019,10 +1057,10 @@ CREATE POLICY leaves_update ON public.leave_requests FOR UPDATE TO authenticated
 );
 
 -- Shifts & assignments
-CREATE POLICY shifts_select        ON public.shifts            FOR SELECT TO authenticated USING (TRUE);
-CREATE POLICY shifts_write         ON public.shifts            FOR ALL    TO authenticated USING (public.has_permission('shifts','edit'));
-CREATE POLICY shift_assign_select  ON public.shift_assignments FOR SELECT TO authenticated USING (TRUE);
-CREATE POLICY shift_assign_write   ON public.shift_assignments FOR ALL    TO authenticated USING (public.has_permission('shifts','edit'));
+CREATE POLICY shifts_select ON public.shifts FOR SELECT TO authenticated USING (TRUE);
+CREATE POLICY shifts_write   ON public.shifts FOR ALL    TO authenticated USING (public.has_permission('shifts','edit'));
+CREATE POLICY shift_assign_select ON public.shift_assignments FOR SELECT TO authenticated USING (TRUE);
+CREATE POLICY shift_assign_write  ON public.shift_assignments FOR ALL    TO authenticated USING (public.has_permission('shifts','edit'));
 
 CREATE POLICY shift_requests_select ON public.shift_requests FOR SELECT TO authenticated USING (
     public.has_permission('shifts','view') OR employee_id = public.get_current_employee_id()
@@ -1037,14 +1075,26 @@ CREATE POLICY shift_requests_update ON public.shift_requests FOR UPDATE TO authe
 -- Tasks
 CREATE POLICY tasks_select ON public.tasks FOR SELECT TO authenticated USING (
     public.has_permission('tasks','view')
-    OR assigned_employee_id = public.get_current_employee_id()
+    OR responsible_person_id = public.get_current_employee_id()
     OR assigned_by = public.get_current_employee_id()
+    OR EXISTS (
+        SELECT 1 FROM public.task_assignees ta
+        WHERE ta.task_id = public.tasks.id
+          AND ta.employee_id = public.get_current_employee_id()
+    )
 );
 CREATE POLICY tasks_insert ON public.tasks FOR INSERT TO authenticated WITH CHECK (
     public.has_permission('tasks','create')
 );
 CREATE POLICY tasks_update ON public.tasks FOR UPDATE TO authenticated USING (
-    public.has_permission('tasks','edit') OR assigned_employee_id = public.get_current_employee_id()
+    public.has_permission('tasks','edit')
+    OR responsible_person_id = public.get_current_employee_id()
+    OR assigned_by = public.get_current_employee_id()
+    OR EXISTS (
+        SELECT 1 FROM public.task_assignees ta
+        WHERE ta.task_id = public.tasks.id
+          AND ta.employee_id = public.get_current_employee_id()
+    )
 );
 
 -- Performance (scores + history)
@@ -1088,7 +1138,7 @@ CREATE POLICY expenses_update ON public.expenses FOR UPDATE TO authenticated USI
     public.has_permission('finance','approve')
 );
 
--- Notifications
+-- Notifications (broadcast: recipients table decides visibility)
 CREATE POLICY notifications_select ON public.notifications FOR SELECT TO authenticated USING (
     EXISTS ( SELECT 1 FROM public.notification_recipients nr
              WHERE nr.notification_id = notifications.id
@@ -1139,20 +1189,23 @@ INSERT INTO storage.buckets (id, name, public) VALUES
     ('avatars',            'avatars',            TRUE)
 ON CONFLICT (id) DO NOTHING;
 
+-- Public avatars: anyone can read; authenticated users can upload/update.
 DROP POLICY IF EXISTS avatars_public_read ON storage.objects;
-DROP POLICY IF EXISTS avatars_auth_write  ON storage.objects;
-DROP POLICY IF EXISTS avatars_auth_update ON storage.objects;
-
+DROP POLICY IF EXISTS avatars_auth_write ON storage.objects;
 CREATE POLICY avatars_public_read ON storage.objects FOR SELECT USING (bucket_id = 'avatars');
 CREATE POLICY avatars_auth_write  ON storage.objects FOR INSERT TO authenticated WITH CHECK (bucket_id = 'avatars');
 CREATE POLICY avatars_auth_update ON storage.objects FOR UPDATE TO authenticated USING (bucket_id = 'avatars');
 
+-- Private document buckets: authenticated users may read/write,
+-- constrained by application logic. (Internal files, not public.)
 DROP POLICY IF EXISTS docs_auth_access ON storage.objects;
 CREATE POLICY docs_auth_access ON storage.objects FOR ALL TO authenticated USING (
     bucket_id IN ('employee-documents','face-photos','resumes','receipts')
 );
 
--- Cleanup temporary helper
+-- ============================================================
+-- 9. Re-runability cleanup
+-- ============================================================
 DROP FUNCTION IF EXISTS public.seed_permissions(UUID, TEXT[], TEXT[]);
 
 COMMIT;

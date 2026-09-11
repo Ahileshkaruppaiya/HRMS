@@ -56,49 +56,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
--- Guards against recursion in RLS policies: reads are SECURITY DEFINER
--- so they run with the definer's privileges and read the permission
--- tables without triggering their own RLS.
-CREATE OR REPLACE FUNCTION public.get_employee_row()
-RETURNS public.employees AS $$
-    SELECT *
-    FROM public.employees
-    WHERE auth_id = auth.uid()
-    LIMIT 1;
-$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public;
 
-CREATE OR REPLACE FUNCTION public.get_current_employee_id()
-RETURNS UUID AS $$
-    SELECT id FROM public.employees WHERE auth_id = auth.uid() LIMIT 1;
-$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public;
-
-CREATE OR REPLACE FUNCTION public.get_current_role_key()
-RETURNS TEXT AS $$
-    SELECT r.key
-    FROM public.employees e
-    JOIN public.roles r ON r.id = e.role_id
-    WHERE e.auth_id = auth.uid()
-    LIMIT 1;
-$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public;
-
--- RBAC engine: does the current user's role allow <module:action>?
-CREATE OR REPLACE FUNCTION public.has_permission(p_module TEXT, p_action TEXT)
-RETURNS BOOLEAN AS $$
-    SELECT EXISTS (
-        SELECT 1
-        FROM public.employees e
-        JOIN public.permissions p ON p.role_id = e.role_id
-        WHERE e.auth_id = auth.uid()
-          AND p.module = p_module
-          AND p.action = p_action
-    );
-$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public;
-
--- Convenience: is the current user a Super Admin or HR Admin?
-CREATE OR REPLACE FUNCTION public.is_admin()
-RETURNS BOOLEAN AS $$
-    SELECT public.get_current_role_key() IN ('super_admin', 'hr_admin');
-$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public;
 
 -- ============================================================
 -- 2. Enumerated Types (enforce valid values at the DB layer)
@@ -218,6 +176,53 @@ ALTER TABLE public.departments
 ALTER TABLE public.departments
     ADD CONSTRAINT fk_departments_head
     FOREIGN KEY (head_id) REFERENCES public.employees(id) ON DELETE SET NULL;
+
+-- ============================================================
+-- 3b. RBAC and Auth Helper Functions (require employees, roles, permissions)
+-- ============================================================
+-- Guards against recursion in RLS policies: reads are SECURITY DEFINER
+-- so they run with the definer's privileges and read the permission
+-- tables without triggering their own RLS.
+CREATE OR REPLACE FUNCTION public.get_employee_row()
+RETURNS public.employees AS $$
+    SELECT *
+    FROM public.employees
+    WHERE auth_id = auth.uid()
+    LIMIT 1;
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public;
+
+CREATE OR REPLACE FUNCTION public.get_current_employee_id()
+RETURNS UUID AS $$
+    SELECT id FROM public.employees WHERE auth_id = auth.uid() LIMIT 1;
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public;
+
+CREATE OR REPLACE FUNCTION public.get_current_role_key()
+RETURNS TEXT AS $$
+    SELECT r.key
+    FROM public.employees e
+    JOIN public.roles r ON r.id = e.role_id
+    WHERE e.auth_id = auth.uid()
+    LIMIT 1;
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public;
+
+-- RBAC engine: does the current user's role allow <module:action>?
+CREATE OR REPLACE FUNCTION public.has_permission(p_module TEXT, p_action TEXT)
+RETURNS BOOLEAN AS $$
+    SELECT EXISTS (
+        SELECT 1
+        FROM public.employees e
+        JOIN public.permissions p ON p.role_id = e.role_id
+        WHERE e.auth_id = auth.uid()
+          AND p.module = p_module
+          AND p.action = p_action
+    );
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public;
+
+-- Convenience: is the current user a Super Admin or HR Admin?
+CREATE OR REPLACE FUNCTION public.is_admin()
+RETURNS BOOLEAN AS $$
+    SELECT public.get_current_role_key() IN ('super_admin', 'hr_admin');
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public;
 
 -- --- designations ---
 CREATE TABLE IF NOT EXISTS public.designations (
@@ -799,9 +804,9 @@ CREATE INDEX IF NOT EXISTS idx_shift_assignments_shift      ON public.shift_assi
 CREATE INDEX IF NOT EXISTS idx_shift_assignments_employee   ON public.shift_assignments(employee_id);
 CREATE INDEX IF NOT EXISTS idx_shift_requests_employee      ON public.shift_requests(employee_id);
 
-CREATE INDEX IF NOT EXISTS idx_tasks_assigned_employee      ON public.tasks(assigned_employee_id);
+CREATE INDEX IF NOT EXISTS idx_tasks_responsible_person   ON public.tasks(responsible_person_id);
 CREATE INDEX IF NOT EXISTS idx_tasks_department             ON public.tasks(department_id);
-CREATE INDEX IF NOT EXISTS idx_tasks_status                 ON public.tasks(status);
+CREATE INDEX IF NOT EXISTS idx_tasks_status                 ON public.tasks(overall_status);
 
 CREATE INDEX IF NOT EXISTS idx_performance_employee         ON public.performance_scores(employee_id);
 CREATE INDEX IF NOT EXISTS idx_performance_period           ON public.performance_scores(period);
@@ -1070,14 +1075,26 @@ CREATE POLICY shift_requests_update ON public.shift_requests FOR UPDATE TO authe
 -- Tasks
 CREATE POLICY tasks_select ON public.tasks FOR SELECT TO authenticated USING (
     public.has_permission('tasks','view')
-    OR assigned_employee_id = public.get_current_employee_id()
+    OR responsible_person_id = public.get_current_employee_id()
     OR assigned_by = public.get_current_employee_id()
+    OR EXISTS (
+        SELECT 1 FROM public.task_assignees ta
+        WHERE ta.task_id = public.tasks.id
+          AND ta.employee_id = public.get_current_employee_id()
+    )
 );
 CREATE POLICY tasks_insert ON public.tasks FOR INSERT TO authenticated WITH CHECK (
     public.has_permission('tasks','create')
 );
 CREATE POLICY tasks_update ON public.tasks FOR UPDATE TO authenticated USING (
-    public.has_permission('tasks','edit') OR assigned_employee_id = public.get_current_employee_id()
+    public.has_permission('tasks','edit')
+    OR responsible_person_id = public.get_current_employee_id()
+    OR assigned_by = public.get_current_employee_id()
+    OR EXISTS (
+        SELECT 1 FROM public.task_assignees ta
+        WHERE ta.task_id = public.tasks.id
+          AND ta.employee_id = public.get_current_employee_id()
+    )
 );
 
 -- Performance (scores + history)
