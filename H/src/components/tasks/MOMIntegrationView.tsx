@@ -16,6 +16,7 @@ import {
   UserCheck
 } from 'lucide-react';
 import { MOMMeeting, MOMActionItem, TaskPriority } from '../../types/tasks';
+import { formatDateDDMMYYYY } from '../../utils/dateUtils';
 
 interface MOMIntegrationViewProps {
   onOpenTask: (taskId: string) => void;
@@ -26,22 +27,52 @@ export const MOMIntegrationView: React.FC<MOMIntegrationViewProps> = ({ onOpenTa
 
   const [selectedMeetingId, setSelectedMeetingId] = useState<string>(momMeetings[0]?.id || '');
   
+  const currentEmpId = currentUser.employeeId || currentUser.id || '';
+  const currentEmpName = (currentUser.name || '').trim().toLowerCase();
+
+  // Tasks cannot be assigned to oneself ("oru person own task assign pannakudathu")
+  const isSelf = (empOrId: string | { id?: string; employeeId?: string; firstName?: string; lastName?: string }) => {
+    if (!empOrId) return false;
+    const empId = typeof empOrId === 'string' ? empOrId : (empOrId.employeeId || empOrId.id || '');
+    const empObj = typeof empOrId === 'object' && (empOrId.firstName || empOrId.lastName)
+      ? empOrId 
+      : employees.find(e => e.employeeId === empId || e.id === empId);
+
+    if (currentEmpId && empId && (empId.toLowerCase() === currentEmpId.toLowerCase())) return true;
+    if (currentUser.id && empId && (empId.toLowerCase() === currentUser.id.toLowerCase())) return true;
+    if (currentUser.employeeId && empId && (empId.toLowerCase() === currentUser.employeeId.toLowerCase())) return true;
+
+    if (currentUser.email && empObj && (empObj as any).email && ((empObj as any).email.toLowerCase() === currentUser.email.toLowerCase())) return true;
+
+    const targetName = empObj ? `${empObj.firstName || ''} ${empObj.lastName || ''}`.trim().toLowerCase() : '';
+    if (currentEmpName && targetName) {
+      if (targetName === currentEmpName) return true;
+      if (currentEmpName.includes(targetName) || targetName.includes(currentEmpName)) return true;
+      const currentParts = currentEmpName.replace(/[^a-z0-9]/g, ' ').split(/\s+/).filter(p => p.length > 2 && !['admin', 'manager', 'head', 'ceo', 'lead', 'specialist', 'executive'].includes(p));
+      const targetParts = targetName.replace(/[^a-z0-9]/g, ' ').split(/\s+/).filter(p => p.length > 2);
+      if (currentParts.some(cp => targetParts.some(tp => cp === tp || cp.includes(tp) || tp.includes(cp)))) {
+        return true;
+      }
+    }
+    return false;
+  };
+
+  const assignableEmployees = employees.filter(emp => !isSelf(emp));
+  const defaultEmp = assignableEmployees.find(e => e.designation !== 'CEO' && e.employeeId !== 'EMP-000') || assignableEmployees[0];
+  const defaultEmpId = defaultEmp?.employeeId || (assignableEmployees[0]?.employeeId) || '';
+
   // Convert Action Item Modal State
   const [convertingItem, setConvertingItem] = useState<{ meeting: MOMMeeting; item: MOMActionItem } | null>(null);
-  const [assigneeEmployeeIds, setAssigneeEmployeeIds] = useState<string[]>([
-    currentUser.employeeId || 'EMP-001'
-  ]);
-  const [responsiblePersonId, setResponsiblePersonId] = useState<string>(
-    currentUser.employeeId || 'EMP-001'
-  );
+  const [assigneeEmployeeIds, setAssigneeEmployeeIds] = useState<string[]>(defaultEmpId ? [defaultEmpId] : []);
+  const [responsiblePersonId, setResponsiblePersonId] = useState<string>(defaultEmpId);
   const [targetCategory, setTargetCategory] = useState<string>('Operations');
 
   const selectedMeeting = momMeetings.find(m => m.id === selectedMeetingId) || momMeetings[0];
 
   const handleOpenConvertModal = (meeting: MOMMeeting, item: MOMActionItem) => {
     setConvertingItem({ meeting, item });
-    setAssigneeEmployeeIds([currentUser.employeeId || 'EMP-001']);
-    setResponsiblePersonId(currentUser.employeeId || 'EMP-001');
+    setAssigneeEmployeeIds(defaultEmpId ? [defaultEmpId] : []);
+    setResponsiblePersonId(defaultEmpId);
   };
 
   const handleExecuteConvert = (e: React.FormEvent) => {
@@ -241,7 +272,7 @@ export const MOMIntegrationView: React.FC<MOMIntegrationViewProps> = ({ onOpenTa
                           </td>
 
                           <td>
-                            <span style={{ fontSize: '0.78rem' }}>{item.dueDate}</span>
+                            <span style={{ fontSize: '0.78rem' }}>{formatDateDDMMYYYY(item.dueDate)}</span>
                           </td>
 
                           <td>
@@ -313,7 +344,7 @@ export const MOMIntegrationView: React.FC<MOMIntegrationViewProps> = ({ onOpenTa
                 </div>
                 <div style={{ display: 'flex', gap: '16px', fontSize: '0.72rem', color: '#7e22ce', marginTop: '6px' }}>
                   <span>Department: <strong>{convertingItem.item.department}</strong></span>
-                  <span>Due Date: <strong>{convertingItem.item.dueDate}</strong></span>
+                  <span>Due Date: <strong>{formatDateDDMMYYYY(convertingItem.item.dueDate)}</strong></span>
                   <span>Priority: <strong>{convertingItem.item.priority}</strong></span>
                 </div>
               </div>
@@ -332,7 +363,7 @@ export const MOMIntegrationView: React.FC<MOMIntegrationViewProps> = ({ onOpenTa
                   style={{ marginTop: '4px' }}
                   required
                 >
-                  {employees.map(emp => (
+                  {assignableEmployees.map(emp => (
                     <option key={emp.id} value={emp.employeeId}>
                       {emp.firstName} {emp.lastName} ({emp.department} - {emp.designation})
                     </option>
@@ -343,7 +374,7 @@ export const MOMIntegrationView: React.FC<MOMIntegrationViewProps> = ({ onOpenTa
               <div style={{ marginBottom: '16px' }}>
                 <label style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-secondary)' }}>Assign Employees (Multi-Assignee)</label>
                 <div style={{ maxHeight: '180px', overflowY: 'auto', border: '1px solid var(--border-light)', borderRadius: '6px', padding: '8px', marginTop: '4px' }}>
-                  {employees.map(emp => (
+                  {assignableEmployees.map(emp => (
                     <label key={emp.id} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '4px', cursor: 'pointer', fontSize: '0.8rem' }}>
                       <input 
                         type="checkbox"

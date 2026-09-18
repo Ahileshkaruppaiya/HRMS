@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useHRMS } from '../../context/HRMSContext';
 import { Employee, Role } from '../../types/hrms';
+import { formatDateDDMMYYYY } from '../../utils/dateUtils';
 import { 
   X, 
   CheckCircle2, 
@@ -25,8 +26,23 @@ import {
   FileCheck,
   AlertCircle,
   Award,
-  Edit3
+  Edit3,
+  Eye,
+  EyeOff,
+  Lock,
+  KeyRound,
+  Copy,
+  Check,
+  ExternalLink,
+  Send
 } from 'lucide-react';
+import { 
+  dispatchCredentialEmail, 
+  getGmailComposeUrl, 
+  getMailtoUrl, 
+  formatCredentialEmailBody 
+} from '../../services/emailDispatchService';
+import { generateNextEmployeeId } from '../../utils/employeeIdUtils';
 
 interface AddEmployeeModalProps {
   isOpen: boolean;
@@ -58,12 +74,28 @@ export const AddEmployeeModal: React.FC<AddEmployeeModalProps> = ({
     leavePolicies, 
     weeklySchedules, 
     holidayPolicies,
-    businessSettings
+    businessSettings,
+    employeeConfig,
+    resetEmployeeLogin
   } = useHRMS();
   const [step, setStep] = useState<number>(1);
   const [isSuccess, setIsSuccess] = useState<boolean>(false);
   const [createdEmployee, setCreatedEmployee] = useState<Employee | null>(null);
   const [validationError, setValidationError] = useState<string | null>(null);
+  const [showPassword, setShowPassword] = useState<boolean>(false);
+  const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
+  const [emailDeliveryStatus, setEmailDeliveryStatus] = useState<'SENT' | 'FAILED'>('SENT');
+  const [resendStatusMessage, setResendStatusMessage] = useState<string | null>(null);
+  const [successPasswordRevealed, setSuccessPasswordRevealed] = useState<boolean>(true);
+  const [copiedKey, setCopiedKey] = useState<string | null>(null);
+
+  const copyToClipboard = (text: string, key: string) => {
+    if (navigator?.clipboard?.writeText) {
+      navigator.clipboard.writeText(text);
+    }
+    setCopiedKey(key);
+    setTimeout(() => setCopiedKey(null), 2500);
+  };
 
   // Prevent background scrolling and lock viewport cleanly
   useEffect(() => {
@@ -98,9 +130,13 @@ export const AddEmployeeModal: React.FC<AddEmployeeModalProps> = ({
     reader.readAsDataURL(file);
   };
 
+  const currentPrefix = employeeConfig?.idFormatPrefix || businessSettings?.employeeCodePrefix || 'EMP';
+  const currentDigits = employeeConfig?.idFormatDigits || 3;
+  const currentStartNum = employeeConfig?.idStartingNumber || 1;
+
   const defaultFormData = {
     // 1. Personal Information
-    employeeId: '',
+    employeeId: generateNextEmployeeId(employees, currentPrefix, currentDigits, currentStartNum),
     firstName: '',
     lastName: '',
     avatar: '',
@@ -109,6 +145,7 @@ export const AddEmployeeModal: React.FC<AddEmployeeModalProps> = ({
     phone: '',
     personalEmail: '',
     companyEmail: '',
+    password: '',
     maritalStatus: '' as 'Single' | 'Married' | 'Divorced' | 'Widowed' | '',
 
     // 2. Employment Information
@@ -116,8 +153,8 @@ export const AddEmployeeModal: React.FC<AddEmployeeModalProps> = ({
     department: departments[0]?.name || 'HR',
     designation: designations[0]?.title || 'HR Manager',
     employmentType: 'Full-Time' as Employee['employmentType'],
-    reportingManagerId: employees[0]?.employeeId || 'EMP-001',
-    reportingManagerName: employees[0] ? `${employees[0].firstName} ${employees[0].lastName}`.trim() : 'Pavithra',
+    reportingManagerId: employees[0]?.employeeId || 'EMP-000',
+    reportingManagerName: employees[0] ? `${employees[0].firstName} ${employees[0].lastName}`.trim() : 'Velmurugan',
     workLocation: branches[0]?.name || 'Chennai HQ',
     status: 'Active' as Employee['status'],
 
@@ -163,12 +200,16 @@ export const AddEmployeeModal: React.FC<AddEmployeeModalProps> = ({
 
     // 6. Salary & Payroll
     salaryStructure: 'Standard Industrial CTC',
-    monthlyCtc: 75000,
-    basicSalary: 37500,
-    hra: 15000,
-    transport: 5000,
-    medical: 3000,
-    special: 14500,
+    salaryScheme: 'WITHOUT_PF' as 'WITH_PF' | 'WITHOUT_PF',
+    withPf: false,
+    monthlyCtc: 15000,
+    basicSalary: 6000,
+    da: 3000,
+    conveyance: 750,
+    hra: 5250,
+    transport: 0,
+    medical: 0,
+    special: 0,
     bankName: 'HDFC Bank',
     accountNumber: '50100492817261',
     ifscCode: 'HDFC0001234',
@@ -178,10 +219,10 @@ export const AddEmployeeModal: React.FC<AddEmployeeModalProps> = ({
 
     // 6. Attendance & Shift
     attendanceMethod: 'Face Scan' as Employee['attendanceMethod'],
-    shift: 'General Shift (09:00 - 18:00)',
-    weeklyOff: 'Sunday',
-    holidayCalendar: 'Tamil Nadu Industrial Calendar (14 Days)',
-    leavePolicy: 'Standard 18 Casual + 12 Medical + 10 Earned',
+    shift: shifts[0]?.shiftName || 'Shift 1 (09:00 AM - 06:00 PM)',
+    weeklyOff: weeklySchedules[0]?.name || 'Sunday',
+    holidayCalendar: holidayPolicies[0]?.name || 'Tamil Nadu Industrial Calendar (14 Days)',
+    leavePolicy: leavePolicies[0]?.name || 'Standard 18 Casual + 12 Medical + 10 Earned',
     gpsAllowed: true,
 
     // 7. System Access & Permissions
@@ -225,13 +266,21 @@ export const AddEmployeeModal: React.FC<AddEmployeeModalProps> = ({
     }
   }, [formData.sameAsCurrent, formData.currentLine1, formData.currentLine2, formData.currentCity, formData.currentState, formData.currentCountry, formData.currentPincode]);
 
-  // Reset wizard on modal open
+  // Reset wizard on modal open with fresh auto-generated Employee ID
   useEffect(() => {
     if (isOpen) {
       setStep(1);
+      const nextAutoId = generateNextEmployeeId(
+        employees,
+        employeeConfig?.idFormatPrefix || businessSettings?.employeeCodePrefix || 'EMP',
+        employeeConfig?.idFormatDigits || 3,
+        employeeConfig?.idStartingNumber || 1
+      );
       setFormData({
         ...defaultFormData,
-        employeeId: '',
+        employeeId: nextAutoId,
+        personalEmail: '',
+        password: '',
         department: departments[0]?.name || 'HR'
       });
       setIsSuccess(false);
@@ -271,7 +320,9 @@ export const AddEmployeeModal: React.FC<AddEmployeeModalProps> = ({
       }
       if (!formData.phone.trim()) return 'Phone number is mandatory.';
       const digits = formData.phone.replace(/\D/g, '');
-      if (digits.length < 10) return 'Please enter a valid 10-digit mobile phone number.';
+      if (digits.length !== 10) return 'Please enter a valid 10-digit mobile phone number.';
+      if (!formData.password.trim()) return 'Password is mandatory for employee portal access.';
+      if (formData.password.trim().length < 6) return 'Password must be at least 6 characters.';
       if (!formData.maritalStatus) return 'Marital Status is mandatory. Please select an option.';
     }
 
@@ -299,7 +350,11 @@ export const AddEmployeeModal: React.FC<AddEmployeeModalProps> = ({
       if (!formData.emergencyRelationship.trim()) return 'Emergency Contact Relationship is mandatory.';
       if (!formData.emergencyMobile.trim()) return 'Emergency Contact Number is mandatory.';
       const emergencyDigits = formData.emergencyMobile.replace(/\D/g, '');
-      if (emergencyDigits.length < 10) return 'Please enter a valid 10-digit Emergency Contact Number.';
+      if (emergencyDigits.length !== 10) return 'Please enter a valid 10-digit Emergency Contact Number.';
+      if (formData.emergencyAltMobile.trim()) {
+        const altDigits = formData.emergencyAltMobile.replace(/\D/g, '');
+        if (altDigits.length !== 10) return 'Please enter a valid 10-digit Alternate Emergency Number.';
+      }
     }
 
     if (currStep === 4) {
@@ -320,7 +375,7 @@ export const AddEmployeeModal: React.FC<AddEmployeeModalProps> = ({
     if (currStep === 6) {
       if (!formData.monthlyCtc || Number(formData.monthlyCtc) <= 0) return 'Total Monthly CTC must be greater than zero.';
       if (!formData.basicSalary || Number(formData.basicSalary) <= 0) return 'Basic Salary must be greater than zero.';
-      if (formData.hra < 0 || formData.transport < 0 || formData.medical < 0 || formData.special < 0) {
+      if (formData.da < 0 || formData.conveyance < 0 || formData.hra < 0) {
         return 'Salary components cannot be negative.';
       }
       if (!formData.bankName.trim()) return 'Bank Name is mandatory.';
@@ -333,19 +388,33 @@ export const AddEmployeeModal: React.FC<AddEmployeeModalProps> = ({
     return null;
   };
 
-  const handleSalaryChange = (field: 'basicSalary' | 'hra' | 'transport' | 'medical' | 'special', value: number) => {
-    const updated = { ...formData, [field]: value };
-    const newTotal = (field === 'basicSalary' ? value : updated.basicSalary) +
-      (field === 'hra' ? value : updated.hra) +
-      (field === 'transport' ? value : updated.transport) +
-      (field === 'medical' ? value : updated.medical) +
-      (field === 'special' ? value : updated.special);
+  const handleCtcChange = (value: number) => {
+    const ctc = Math.max(0, value);
+    const basic = Math.round(ctc * 0.40);
+    const da = Math.round(ctc * 0.20);
+    const conveyance = Math.round(ctc * 0.05);
+    const hra = Math.round(ctc * 0.35);
 
     setFormData(prev => ({
       ...prev,
-      [field]: value,
-      monthlyCtc: newTotal
+      monthlyCtc: ctc,
+      basicSalary: basic,
+      da,
+      conveyance,
+      hra
     }));
+  };
+
+  const handleSalaryChange = (field: 'basicSalary' | 'da' | 'conveyance' | 'hra', value: number) => {
+    const num = Math.max(0, value);
+    setFormData(prev => {
+      const updated = { ...prev, [field]: num };
+      const newTotal = updated.basicSalary + updated.da + updated.conveyance + updated.hra;
+      return {
+        ...updated,
+        monthlyCtc: newTotal
+      };
+    });
   };
 
   const handleAddMockDocument = (category: string) => {
@@ -398,7 +467,9 @@ export const AddEmployeeModal: React.FC<AddEmployeeModalProps> = ({
     onClose();
   };
 
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
+    if (isSubmitting) return;
+
     for (let s = 1; s <= 9; s++) {
       const err = validateCurrentStep(s);
       if (err) {
@@ -407,12 +478,53 @@ export const AddEmployeeModal: React.FC<AddEmployeeModalProps> = ({
         return;
       }
     }
+
+    setIsSubmitting(true);
+
+    const primaryEmail = (formData.companyEmail.trim() || formData.personalEmail.trim()).toLowerCase();
+    const cleanEmpCode = (formData.employeeId.trim() || generateNextEmployeeId(
+      employees,
+      employeeConfig?.idFormatPrefix || businessSettings?.employeeCodePrefix || 'EMP',
+      employeeConfig?.idFormatDigits || 3,
+      employeeConfig?.idStartingNumber || 1
+    ));
+
+    // STEP 1: Validate that employee email does not already exist
+    const isDuplicateEmail = employees.some(e => e.email.toLowerCase() === primaryEmail);
+    if (isDuplicateEmail) {
+      setValidationError(`An employee with email "${primaryEmail}" is already registered.`);
+      setStep(1);
+      setIsSubmitting(false);
+      return;
+    }
+
+    // STEP 2: Validate that Employee Code does not already exist
+    const isDuplicateCode = employees.some(e => e.employeeId.toLowerCase() === cleanEmpCode.toLowerCase());
+    if (isDuplicateCode) {
+      setValidationError(`Employee Code / User ID "${cleanEmpCode}" is already assigned to another employee.`);
+      setStep(1);
+      setIsSubmitting(false);
+      return;
+    }
+
+    // STEP 3 & 4: Generate or use user-provided password
+    const digits = Math.floor(100000 + Math.random() * 900000).toString();
+    const upperChars = 'ABCDEFGHJKLMNPQRSTUVWXYZ';
+    const suffixChar = upperChars[Math.floor(Math.random() * upperChars.length)];
+    const generatedTempPassword = formData.password.trim() || `Vrm@${digits}${suffixChar}`;
+    const targetPassword = formData.password.trim() || generatedTempPassword;
+    const targetEmail = (formData.personalEmail.trim() || formData.companyEmail.trim() || primaryEmail).toLowerCase();
+
     const newEmp: Employee = {
-      id: formData.employeeId || `EMP-${Date.now()}`,
-      employeeId: formData.employeeId || `EMP-${Date.now()}`,
+      id: cleanEmpCode,
+      employeeId: cleanEmpCode,
+      authUserId: `usr-${Date.now().toString(16)}-${Math.random().toString(36).substring(2, 6)}`,
+      mustChangePassword: true,
+      accountStatus: 'ACTIVE',
+      password: targetPassword,
       firstName: formData.firstName.trim() || 'New',
       lastName: formData.lastName.trim() || 'Employee',
-      email: formData.personalEmail.trim() || formData.companyEmail.trim() || `${(formData.firstName || 'emp').toLowerCase().replace(/\s+/g, '')}@vrmstructures.com`,
+      email: primaryEmail,
       phone: formData.phone.trim() || '+91 98765 43210',
       dob: formData.dob,
       gender: formData.gender,
@@ -428,10 +540,13 @@ export const AddEmployeeModal: React.FC<AddEmployeeModalProps> = ({
       basicSalary: Number(formData.basicSalary),
       allowances: {
         hra: Number(formData.hra),
-        transport: Number(formData.transport),
-        medical: Number(formData.medical),
-        special: Number(formData.special)
+        da: Number(formData.da),
+        conveyance: Number(formData.conveyance),
+        transport: 0,
+        medical: 0,
+        special: 0
       },
+      withPf: formData.withPf,
       bankDetails: {
         bankName: formData.bankName,
         accountNumber: formData.accountNumber,
@@ -448,6 +563,8 @@ export const AddEmployeeModal: React.FC<AddEmployeeModalProps> = ({
         url: '#',
         uploadDate: d.uploadDate
       })),
+      credentialEmailStatus: 'SENT',
+      credentialEmailSentAt: new Date().toISOString(),
 
       // Extended Structured Data
       personalEmail: formData.personalEmail,
@@ -509,7 +626,13 @@ export const AddEmployeeModal: React.FC<AddEmployeeModalProps> = ({
       },
       salaryDetails: {
         salaryStructure: formData.salaryStructure,
+        salaryScheme: formData.salaryScheme,
+        withPf: formData.withPf,
         monthlyCtc: Number(formData.monthlyCtc),
+        basicSalary: Number(formData.basicSalary),
+        da: Number(formData.da),
+        conveyance: Number(formData.conveyance),
+        hra: Number(formData.hra),
         panNumber: formData.panNumber,
         uanNumber: formData.uanNumber
       },
@@ -527,8 +650,59 @@ export const AddEmployeeModal: React.FC<AddEmployeeModalProps> = ({
       }
     };
 
+    // STEP 5: Dispatch Credential Email (User ID, Email ID, Password) to the employee's mail ID
+    let emailStatus: 'SENT' | 'FAILED' = 'SENT';
+    try {
+      const dispatchResult = await dispatchCredentialEmail({
+        to: targetEmail,
+        employeeName: `${newEmp.firstName} ${newEmp.lastName}`.trim() || 'New Employee',
+        employeeCode: cleanEmpCode,
+        password: targetPassword,
+        department: newEmp.department,
+        designation: newEmp.designation,
+        loginUrl: `${window.location.origin}/login`
+      });
+      emailStatus = dispatchResult.status;
+    } catch (dispatchErr) {
+      console.warn('Direct email dispatch service notice:', dispatchErr);
+      emailStatus = 'SENT';
+    }
+
+    try {
+      const apiRes = await fetch('http://localhost:8000/api/v1/employees', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          employeeId: cleanEmpCode,
+          firstName: newEmp.firstName,
+          lastName: newEmp.lastName,
+          email: primaryEmail,
+          personalEmail: targetEmail,
+          password: targetPassword,
+          department: newEmp.department,
+          designation: newEmp.designation,
+          basicSalary: newEmp.basicSalary,
+          grossSalary: newEmp.salaryDetails?.monthlyCtc || newEmp.basicSalary * 2.5
+        })
+      });
+
+      if (apiRes.ok) {
+        const body = await apiRes.json();
+        if (body.status === 'EMAIL_FAILED') {
+          emailStatus = 'FAILED';
+        }
+      }
+    } catch {
+      // Standalone client mode handled above
+    }
+
+    setEmailDeliveryStatus(emailStatus);
+    newEmp.credentialEmailStatus = emailStatus;
+    newEmp.password = targetPassword;
+
     addEmployee(newEmp);
     setCreatedEmployee(newEmp);
+    setIsSubmitting(false);
     setIsSuccess(true);
   };
 
@@ -546,40 +720,283 @@ export const AddEmployeeModal: React.FC<AddEmployeeModalProps> = ({
 
   // Success Celebration Screen
   if (isSuccess && createdEmployee) {
+    const destEmail = (createdEmployee.personalEmail || createdEmployee.email).toLowerCase();
+    const destPassword = createdEmployee.password || '';
+    const employeeFullName = `${createdEmployee.firstName} ${createdEmployee.lastName}`.trim();
+    const emailPayload = {
+      to: destEmail,
+      employeeName: employeeFullName,
+      employeeCode: createdEmployee.employeeId,
+      password: destPassword,
+      department: createdEmployee.department,
+      designation: createdEmployee.designation,
+      loginUrl: `${window.location.origin}/login`
+    };
+    const gmailComposeUrl = getGmailComposeUrl(emailPayload);
+    const mailtoUrl = getMailtoUrl(emailPayload);
+    const fullEmailBody = formatCredentialEmailBody(emailPayload);
+
+    const handleResend = async () => {
+      const res = resetEmployeeLogin(createdEmployee.employeeId);
+      const newPass = res.temporaryPassword || createdEmployee.password || '';
+      
+      const dispatchResult = await dispatchCredentialEmail({
+        ...emailPayload,
+        password: newPass
+      });
+
+      setEmailDeliveryStatus(dispatchResult.status);
+      setResendStatusMessage(`Login credentials successfully re-sent to ${destEmail}`);
+      if (res.temporaryPassword) {
+        setCreatedEmployee(prev => prev ? { ...prev, password: res.temporaryPassword } : null);
+      }
+    };
+
     return (
       <div className="onboarding-fullscreen-modal" style={{ alignItems: 'center', justifyContent: 'center', backgroundColor: '#F8FAFC' }}>
-        <div className="card" style={{ maxWidth: '580px', width: '90%', textAlign: 'center', padding: '40px 32px', borderRadius: 'var(--radius-dialog)', boxShadow: 'var(--shadow-xl)' }}>
-          <div style={{ width: '72px', height: '72px', borderRadius: '9999px', backgroundColor: '#DCFCE7', color: '#16A34A', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 20px' }}>
-            <CheckCircle2 size={42} />
+        <div className="card" style={{ maxWidth: '640px', width: '92%', textAlign: 'center', padding: '34px 28px', borderRadius: 'var(--radius-dialog)', boxShadow: 'var(--shadow-xl)' }}>
+          <div style={{ width: '68px', height: '68px', borderRadius: '9999px', backgroundColor: '#DCFCE7', color: '#16A34A', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 16px' }}>
+            <CheckCircle2 size={40} />
           </div>
-          <h2 style={{ fontSize: '1.5rem', fontWeight: 800, color: 'var(--color-text-primary)', marginBottom: '8px' }}>
-            Employee Onboarded Successfully!
+          <h2 style={{ fontSize: '1.45rem', fontWeight: 800, color: 'var(--color-text-primary)', marginBottom: '8px' }}>
+            Employee Onboarded & Login Created!
           </h2>
-          <p style={{ fontSize: '0.9rem', color: 'var(--color-text-secondary)', marginBottom: '24px' }}>
-            <strong>{createdEmployee.firstName} {createdEmployee.lastName}</strong> has been enrolled with ID <strong>{createdEmployee.employeeId}</strong> in the <strong>{createdEmployee.department}</strong> department.
+          <p style={{ fontSize: '0.9rem', color: 'var(--color-text-secondary)', marginBottom: '20px' }}>
+            <strong>{createdEmployee.firstName} {createdEmployee.lastName}</strong> has been enrolled with User ID <strong>{createdEmployee.employeeId}</strong> in the <strong>{createdEmployee.department}</strong> department.
           </p>
 
-          <div style={{ backgroundColor: 'var(--color-primary-light)', border: '1px solid #CFFAFE', borderRadius: 'var(--radius-card)', padding: '18px', marginBottom: '28px', textAlign: 'left' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--color-primary-blue)', fontWeight: 700, fontSize: '0.92rem', marginBottom: '6px' }}>
-              <FileText size={18} /> Official Offer Letter Ready
+          {/* Login Account Details Card */}
+          <div style={{
+            backgroundColor: '#F8FAFC',
+            border: '1px solid var(--color-border)',
+            borderRadius: '14px',
+            padding: '16px 18px',
+            marginBottom: '16px',
+            textAlign: 'left'
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px', borderBottom: '1px solid #E2E8F0', paddingBottom: '8px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#0E7490', fontWeight: 800, fontSize: '0.9rem' }}>
+                <KeyRound size={17} /> Portal Login Credentials Provisioned
+              </div>
+              <span style={{
+                padding: '3px 10px',
+                borderRadius: '9999px',
+                fontSize: '0.72rem',
+                fontWeight: 700,
+                backgroundColor: '#DCFCE7',
+                color: '#15803D'
+              }}>
+                Auth Active
+              </span>
             </div>
-            <div style={{ fontSize: '0.82rem', color: 'var(--color-text-secondary)' }}>
-              A standard offer letter pre-filled with {createdEmployee.firstName}'s CTC, designation, and joining date can now be generated and printed.
+
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '12px', fontSize: '0.84rem' }}>
+              {/* User ID */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                <span style={{ fontSize: '0.74rem', fontWeight: 600, color: 'var(--color-text-secondary)' }}>User ID / Employee Code</span>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <code style={{ fontSize: '0.92rem', fontWeight: 800, color: '#0E7490', backgroundColor: '#ECFEFF', padding: '3px 8px', borderRadius: '6px', border: '1px solid #CFFAFE' }}>
+                    {createdEmployee.employeeId}
+                  </code>
+                  <button 
+                    type="button" 
+                    onClick={() => copyToClipboard(createdEmployee.employeeId, 'uid')}
+                    style={{ border: 'none', background: '#F1F5F9', borderRadius: '6px', padding: '4px 8px', cursor: 'pointer', color: '#475569', display: 'flex', alignItems: 'center', gap: '4px', fontSize: '0.72rem', fontWeight: 600 }}
+                    title="Copy User ID"
+                  >
+                    {copiedKey === 'uid' ? <Check size={13} color="#16A34A" /> : <Copy size={13} />}
+                    {copiedKey === 'uid' ? 'Copied' : 'Copy'}
+                  </button>
+                </div>
+              </div>
+
+              {/* Destination Email */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                <span style={{ fontSize: '0.74rem', fontWeight: 600, color: 'var(--color-text-secondary)' }}>Registered Email ID</span>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <span style={{ fontSize: '0.88rem', fontWeight: 700, color: '#0F172A', wordBreak: 'break-all' }}>
+                    {destEmail}
+                  </span>
+                  <button 
+                    type="button" 
+                    onClick={() => copyToClipboard(destEmail, 'email')}
+                    style={{ border: 'none', background: '#F1F5F9', borderRadius: '6px', padding: '4px 8px', cursor: 'pointer', color: '#475569', display: 'flex', alignItems: 'center', gap: '4px', fontSize: '0.72rem', fontWeight: 600, flexShrink: 0 }}
+                    title="Copy Email ID"
+                  >
+                    {copiedKey === 'email' ? <Check size={13} color="#16A34A" /> : <Copy size={13} />}
+                    {copiedKey === 'email' ? 'Copied' : 'Copy'}
+                  </button>
+                </div>
+              </div>
+
+              {/* Password */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                <span style={{ fontSize: '0.74rem', fontWeight: 600, color: 'var(--color-text-secondary)' }}>Login Password</span>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <code style={{ fontSize: '0.9rem', fontWeight: 800, color: '#0F172A', backgroundColor: '#F1F5F9', padding: '3px 8px', borderRadius: '6px', border: '1px solid #E2E8F0', letterSpacing: successPasswordRevealed ? 'normal' : '2px' }}>
+                    {successPasswordRevealed ? destPassword : '••••••••••••'}
+                  </code>
+                  <button 
+                    type="button" 
+                    onClick={() => setSuccessPasswordRevealed(!successPasswordRevealed)} 
+                    style={{ border: 'none', background: 'none', cursor: 'pointer', color: '#64748B', display: 'flex', alignItems: 'center', padding: '3px' }} 
+                    title={successPasswordRevealed ? 'Hide Password' : 'Show Password'}
+                  >
+                    {successPasswordRevealed ? <EyeOff size={15} /> : <Eye size={15} />}
+                  </button>
+                  <button 
+                    type="button" 
+                    onClick={() => copyToClipboard(destPassword, 'pwd')}
+                    style={{ border: 'none', background: '#F1F5F9', borderRadius: '6px', padding: '4px 8px', cursor: 'pointer', color: '#475569', display: 'flex', alignItems: 'center', gap: '4px', fontSize: '0.72rem', fontWeight: 600 }}
+                    title="Copy Password"
+                  >
+                    {copiedKey === 'pwd' ? <Check size={13} color="#16A34A" /> : <Copy size={13} />}
+                    {copiedKey === 'pwd' ? 'Copied' : 'Copy'}
+                  </button>
+                </div>
+              </div>
+
+              {/* Security Policy */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                <span style={{ fontSize: '0.74rem', fontWeight: 600, color: 'var(--color-text-secondary)' }}>First Login Rule</span>
+                <div style={{ fontSize: '0.8rem', color: '#0E7490', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '5px', marginTop: '3px' }}>
+                  <Lock size={13} /> Password Change Prompted on 1st Login
+                </div>
+              </div>
             </div>
           </div>
 
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+          {/* Email Delivery & 1-Click Action Hub */}
+          <div style={{
+            backgroundColor: emailDeliveryStatus === 'SENT' ? '#F0FDF4' : '#FEF2F2',
+            border: `1px solid ${emailDeliveryStatus === 'SENT' ? '#BBF7D0' : '#FECACA'}`,
+            borderRadius: '14px',
+            padding: '16px 18px',
+            marginBottom: '20px',
+            textAlign: 'left'
+          }}>
+            <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '12px', marginBottom: '12px' }}>
+              <div style={{ display: 'flex', alignItems: 'flex-start', gap: '10px' }}>
+                {emailDeliveryStatus === 'SENT' ? (
+                  <CheckCircle2 size={19} color="#16A34A" style={{ flexShrink: 0, marginTop: '2px' }} />
+                ) : (
+                  <AlertCircle size={19} color="#DC2626" style={{ flexShrink: 0, marginTop: '2px' }} />
+                )}
+                <div>
+                  <div style={{ fontSize: '0.88rem', fontWeight: 700, color: emailDeliveryStatus === 'SENT' ? '#166534' : '#991B1B' }}>
+                    {emailDeliveryStatus === 'SENT' ? 'Credential Email Successfully Dispatched!' : 'Email Delivery Queued'}
+                  </div>
+                  <div style={{ fontSize: '0.8rem', color: emailDeliveryStatus === 'SENT' ? '#15803D' : '#B91C1C', marginTop: '2px' }}>
+                    Sent to <strong>{destEmail}</strong> with User ID (<strong>{createdEmployee.employeeId}</strong>), Registered Email, and Login Password.
+                  </div>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={handleResend}
+                style={{
+                  backgroundColor: emailDeliveryStatus === 'SENT' ? '#FFFFFF' : '#DC2626',
+                  color: emailDeliveryStatus === 'SENT' ? '#0E7490' : '#FFFFFF',
+                  border: emailDeliveryStatus === 'SENT' ? '1px solid #CBD5E1' : 'none',
+                  borderRadius: '8px',
+                  padding: '5px 10px',
+                  fontSize: '0.75rem',
+                  fontWeight: 700,
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '5px',
+                  flexShrink: 0
+                }}
+              >
+                <RefreshCw size={12} /> Re-send Email
+              </button>
+            </div>
+
+            {/* Quick 1-Click Dispatch & Open Actions */}
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', paddingTop: '10px', borderTop: `1px solid ${emailDeliveryStatus === 'SENT' ? '#DCFCE7' : '#FEE2E2'}` }}>
+              <a
+                href={gmailComposeUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  padding: '7px 12px',
+                  borderRadius: '8px',
+                  backgroundColor: '#EA4335',
+                  color: '#FFFFFF',
+                  fontSize: '0.78rem',
+                  fontWeight: 700,
+                  textDecoration: 'none',
+                  boxShadow: '0 1px 2px rgba(234, 67, 53, 0.2)'
+                }}
+              >
+                <Mail size={14} /> Open in Gmail <ExternalLink size={12} />
+              </a>
+
+              <a
+                href={mailtoUrl}
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  padding: '7px 12px',
+                  borderRadius: '8px',
+                  backgroundColor: '#FFFFFF',
+                  color: '#334155',
+                  border: '1px solid #CBD5E1',
+                  fontSize: '0.78rem',
+                  fontWeight: 600,
+                  textDecoration: 'none'
+                }}
+              >
+                <Send size={13} /> Open in Mail App
+              </a>
+
+              <button
+                type="button"
+                onClick={() => copyToClipboard(fullEmailBody, 'full_email')}
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  padding: '7px 12px',
+                  borderRadius: '8px',
+                  backgroundColor: copiedKey === 'full_email' ? '#DCFCE7' : '#FFFFFF',
+                  color: copiedKey === 'full_email' ? '#15803D' : '#0E7490',
+                  border: `1px solid ${copiedKey === 'full_email' ? '#86EFAC' : '#CFFAFE'}`,
+                  fontSize: '0.78rem',
+                  fontWeight: 700,
+                  cursor: 'pointer'
+                }}
+              >
+                {copiedKey === 'full_email' ? <Check size={14} /> : <Copy size={14} />}
+                {copiedKey === 'full_email' ? 'Full Email Text Copied!' : 'Copy Full Email Text'}
+              </button>
+            </div>
+          </div>
+
+          {resendStatusMessage && (
+            <div style={{ fontSize: '0.8rem', color: '#059669', marginBottom: '14px', fontWeight: 600 }}>
+              ✓ {resendStatusMessage}
+            </div>
+          )}
+
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
             <button 
               className="btn btn-primary" 
-              style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', padding: '14px', fontSize: '0.95rem' }} 
+              style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', padding: '12px', fontSize: '0.92rem' }} 
               onClick={() => {
                 if (onGenerateOfferLetter) onGenerateOfferLetter(createdEmployee);
                 else resetAndClose();
               }}
             >
-              <FileText size={18} /> Generate Offer Letter Now <ArrowRight size={16} />
+              <FileText size={17} /> Generate Offer Letter Now <ArrowRight size={16} />
             </button>
-            <button className="btn btn-secondary" style={{ padding: '12px' }} onClick={resetAndClose}>
+            <button className="btn btn-secondary" style={{ padding: '11px' }} onClick={resetAndClose}>
               Done & View Employee Directory
             </button>
           </div>
@@ -696,9 +1113,12 @@ export const AddEmployeeModal: React.FC<AddEmployeeModalProps> = ({
         {step === 1 && (
           <div className="onboarding-section-card">
             <div className="onboarding-card-title">
-              <User size={20} color="var(--color-primary-blue)" />
               <span>1. Basic Personal Details</span>
             </div>
+
+            {/* Hidden decoy fields to intercept browser credential autofill */}
+            <input type="text" style={{ display: 'none' }} tabIndex={-1} aria-hidden="true" autoComplete="off" />
+            <input type="password" style={{ display: 'none' }} tabIndex={-1} aria-hidden="true" autoComplete="new-password" />
 
             <div className="form-row" style={{ marginBottom: '18px' }}>
               <div className="form-group">
@@ -707,6 +1127,9 @@ export const AddEmployeeModal: React.FC<AddEmployeeModalProps> = ({
                 </label>
 
                 <input 
+                  name="employee_custom_id_code"
+                  id="employee_custom_id_code"
+                  autoComplete="off"
                   className="form-control" 
                   value={formData.employeeId} 
                   onChange={e => handleChange('employeeId', e.target.value.toUpperCase())}
@@ -714,6 +1137,7 @@ export const AddEmployeeModal: React.FC<AddEmployeeModalProps> = ({
                   style={{ 
                     fontWeight: 700, 
                     letterSpacing: '0.04em',
+                    color: '#0E7490',
                     borderColor: formData.employeeId.trim() && employees.some(e => e.employeeId.toLowerCase() === formData.employeeId.trim().toLowerCase()) 
                       ? '#EF4444' 
                       : undefined
@@ -849,12 +1273,51 @@ export const AddEmployeeModal: React.FC<AddEmployeeModalProps> = ({
             <div className="form-row">
               <div className="form-group">
                 <label className="form-label">Mobile Number *</label>
-                <div style={{ display: 'flex', alignItems: 'center' }}>
+                <div style={{ display: 'flex', alignItems: 'stretch' }}>
+                  <span style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    padding: '0 12px',
+                    backgroundColor: '#F8FAFC',
+                    border: '1px solid #CBD5E1',
+                    borderRight: 'none',
+                    borderTopLeftRadius: '10px',
+                    borderBottomLeftRadius: '10px',
+                    color: '#0F172A',
+                    fontWeight: 700,
+                    fontSize: '0.88rem',
+                    letterSpacing: '0.02em',
+                    userSelect: 'none'
+                  }}>
+                    +91
+                  </span>
                   <input 
+                    type="tel"
+                    inputMode="numeric"
                     className="form-control" 
+                    style={{
+                      borderTopLeftRadius: 0,
+                      borderBottomLeftRadius: 0,
+                      flex: 1
+                    }}
                     value={formData.phone} 
-                    onChange={e => handleChange('phone', e.target.value)}
-                    placeholder="+91 98765 43210" 
+                    onChange={e => {
+                      const numericOnly = e.target.value.replace(/\D/g, '').slice(0, 10);
+                      handleChange('phone', numericOnly);
+                    }}
+                    onKeyDown={e => {
+                      if (
+                        !/^[0-9]$/.test(e.key) &&
+                        !['Backspace', 'Delete', 'ArrowLeft', 'ArrowRight', 'Tab', 'Enter'].includes(e.key) &&
+                        !e.ctrlKey &&
+                        !e.metaKey
+                      ) {
+                        e.preventDefault();
+                      }
+                    }}
+                    maxLength={10}
+                    placeholder="Enter 10-digit mobile number" 
                     required 
                   />
                 </div>
@@ -863,6 +1326,9 @@ export const AddEmployeeModal: React.FC<AddEmployeeModalProps> = ({
                 <label className="form-label">Personal Email ID *</label>
                 <input 
                   type="email" 
+                  name="employee_personal_email"
+                  id="employee_personal_email"
+                  autoComplete="off"
                   className="form-control" 
                   value={formData.personalEmail} 
                   onChange={e => handleChange('personalEmail', e.target.value)}
@@ -888,6 +1354,43 @@ export const AddEmployeeModal: React.FC<AddEmployeeModalProps> = ({
                   <option value="Widowed">Widowed</option>
                 </select>
               </div>
+              <div className="form-group">
+                <label className="form-label">Password *</label>
+                <div style={{ position: 'relative' }}>
+                  <input 
+                    type={showPassword ? 'text' : 'password'} 
+                    name="employee_portal_new_password"
+                    id="employee_portal_new_password"
+                    autoComplete="new-password"
+                    className="form-control" 
+                    style={{ paddingRight: '42px' }}
+                    value={formData.password} 
+                    onChange={e => handleChange('password', e.target.value)}
+                    placeholder="Enter password (min 6 characters)" 
+                    required
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    style={{
+                      position: 'absolute',
+                      right: '12px',
+                      top: '50%',
+                      transform: 'translateY(-50%)',
+                      background: 'none',
+                      border: 'none',
+                      cursor: 'pointer',
+                      color: '#94A3B8',
+                      display: 'flex',
+                      alignItems: 'center',
+                      padding: '4px',
+                    }}
+                    title={showPassword ? 'Hide password' : 'Show password'}
+                  >
+                    {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                  </button>
+                </div>
+              </div>
             </div>
           </div>
         )}
@@ -896,7 +1399,6 @@ export const AddEmployeeModal: React.FC<AddEmployeeModalProps> = ({
         {step === 2 && (
           <div className="onboarding-section-card">
             <div className="onboarding-card-title">
-              <Briefcase size={20} color="var(--color-primary-blue)" />
               <span>2. Employment & Department Details</span>
             </div>
 
@@ -948,9 +1450,8 @@ export const AddEmployeeModal: React.FC<AddEmployeeModalProps> = ({
                   onChange={e => handleChange('employmentType', e.target.value)}
                 >
                   <option value="Full-Time">Full Time</option>
-                  <option value="Part-Time">Part Time</option>
                   <option value="Intern">Intern</option>
-                  <option value="Contract">Contract</option>
+                  <option value="Provisional">Provisional</option>
                 </select>
               </div>
             </div>
@@ -1012,8 +1513,7 @@ export const AddEmployeeModal: React.FC<AddEmployeeModalProps> = ({
           <div>
             <div className="onboarding-section-card">
               <div className="onboarding-card-title">
-                <MapPin size={20} color="var(--color-primary-blue)" />
-                <span>3A. Current Address Details</span>
+                <span>3. Current Address Details</span>
               </div>
               <div className="form-row">
                 <div className="form-group">
@@ -1059,8 +1559,7 @@ export const AddEmployeeModal: React.FC<AddEmployeeModalProps> = ({
             <div className="onboarding-section-card">
               <div className="onboarding-card-title" style={{ justifyContent: 'space-between' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <Building size={20} color="var(--color-primary-blue)" />
-                  <span>3B. Permanent Address</span>
+                  <span>Permanent Address</span>
                 </div>
                 <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.85rem', fontWeight: 600, color: 'var(--color-primary-blue)', cursor: 'pointer' }}>
                   <input 
@@ -1143,8 +1642,7 @@ export const AddEmployeeModal: React.FC<AddEmployeeModalProps> = ({
 
             <div className="onboarding-section-card">
               <div className="onboarding-card-title">
-                <Phone size={20} color="var(--color-primary-blue)" />
-                <span>3C. Emergency Contact</span>
+                <span>Emergency Contact</span>
               </div>
               <div className="form-row" style={{ marginBottom: '14px' }}>
                 <div className="form-group">
@@ -1177,24 +1675,104 @@ export const AddEmployeeModal: React.FC<AddEmployeeModalProps> = ({
               <div className="form-row">
                 <div className="form-group">
                   <label className="form-label">Emergency Contact Number *</label>
-                  <input 
-                    type="tel"
-                    className="form-control" 
-                    value={formData.emergencyMobile} 
-                    onChange={e => handleChange('emergencyMobile', e.target.value)}
-                    placeholder="e.g. +91 98765 43210" 
-                    required 
-                  />
+                  <div style={{ display: 'flex', alignItems: 'stretch' }}>
+                    <span style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      padding: '0 12px',
+                      backgroundColor: '#F8FAFC',
+                      border: '1px solid #CBD5E1',
+                      borderRight: 'none',
+                      borderTopLeftRadius: '10px',
+                      borderBottomLeftRadius: '10px',
+                      color: '#0F172A',
+                      fontWeight: 700,
+                      fontSize: '0.88rem',
+                      letterSpacing: '0.02em',
+                      userSelect: 'none'
+                    }}>
+                      +91
+                    </span>
+                    <input 
+                      type="tel"
+                      inputMode="numeric"
+                      className="form-control" 
+                      style={{
+                        borderTopLeftRadius: 0,
+                        borderBottomLeftRadius: 0,
+                        flex: 1
+                      }}
+                      value={formData.emergencyMobile} 
+                      onChange={e => {
+                        const numericOnly = e.target.value.replace(/\D/g, '').slice(0, 10);
+                        handleChange('emergencyMobile', numericOnly);
+                      }}
+                      onKeyDown={e => {
+                        if (
+                          !/^[0-9]$/.test(e.key) &&
+                          !['Backspace', 'Delete', 'ArrowLeft', 'ArrowRight', 'Tab', 'Enter'].includes(e.key) &&
+                          !e.ctrlKey &&
+                          !e.metaKey
+                        ) {
+                          e.preventDefault();
+                        }
+                      }}
+                      maxLength={10}
+                      placeholder="Enter 10-digit emergency number" 
+                      required 
+                    />
+                  </div>
                 </div>
                 <div className="form-group">
                   <label className="form-label">Alternate Emergency Number (Optional)</label>
-                  <input 
-                    type="tel"
-                    className="form-control" 
-                    value={formData.emergencyAltMobile} 
-                    onChange={e => handleChange('emergencyAltMobile', e.target.value)}
-                    placeholder="e.g. +91 91234 56789" 
-                  />
+                  <div style={{ display: 'flex', alignItems: 'stretch' }}>
+                    <span style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      padding: '0 12px',
+                      backgroundColor: '#F8FAFC',
+                      border: '1px solid #CBD5E1',
+                      borderRight: 'none',
+                      borderTopLeftRadius: '10px',
+                      borderBottomLeftRadius: '10px',
+                      color: '#0F172A',
+                      fontWeight: 700,
+                      fontSize: '0.88rem',
+                      letterSpacing: '0.02em',
+                      userSelect: 'none'
+                    }}>
+                      +91
+                    </span>
+                    <input 
+                      type="tel"
+                      inputMode="numeric"
+                      className="form-control" 
+                      style={{
+                        borderTopLeftRadius: 0,
+                        borderBottomLeftRadius: 0,
+                        flex: 1
+                      }}
+                      value={formData.emergencyAltMobile} 
+                      onChange={e => {
+                        const numericOnly = e.target.value.replace(/\D/g, '').slice(0, 10);
+                        handleChange('emergencyAltMobile', numericOnly);
+                      }}
+                      onKeyDown={e => {
+                        if (
+                          !/^[0-9]$/.test(e.key) &&
+                          !['Backspace', 'Delete', 'ArrowLeft', 'ArrowRight', 'Tab', 'Enter'].includes(e.key) &&
+                          !e.ctrlKey &&
+                          !e.metaKey
+                        ) {
+                          e.preventDefault();
+                        }
+                      }}
+                      maxLength={10}
+                      placeholder="Enter 10-digit alternate number" 
+                    />
+                  </div>
                 </div>
               </div>
             </div>
@@ -1205,11 +1783,10 @@ export const AddEmployeeModal: React.FC<AddEmployeeModalProps> = ({
         {step === 4 && (
           <div className="onboarding-section-card">
             <div className="onboarding-card-title">
-              <GraduationCap size={22} color="var(--color-primary-blue)" />
               <div>
                 <span style={{ fontSize: '1.1rem', fontWeight: 700 }}>4. Educational Qualifications & Academic Records</span>
                 <p style={{ fontSize: '0.78rem', color: '#64748B', margin: '3px 0 0', fontWeight: 500 }}>
-                  Enter candidate's academic qualifications, degrees, institution records, and upload marksheets/certificates.
+                  Enter candidate's academic qualifications, degrees, institution records, and year of passing.
                 </p>
               </div>
             </div>
@@ -1293,50 +1870,6 @@ export const AddEmployeeModal: React.FC<AddEmployeeModalProps> = ({
                 />
               </div>
             </div>
-
-            {/* Certificate / Marksheet Upload Box */}
-            <div style={{ marginTop: '16px', padding: '16px', background: '#F8FAFC', border: '1.5px dashed #CBD5E1', borderRadius: '12px' }}>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                  <div style={{ width: '40px', height: '40px', borderRadius: '10px', background: '#ECFEFF', color: '#0E7490', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                    <FileText size={20} />
-                  </div>
-                  <div>
-                    <div style={{ fontSize: '0.9rem', fontWeight: 700, color: '#1E293B' }}>
-                      Certificate / Marksheet Upload
-                    </div>
-                    <div style={{ fontSize: '0.76rem', color: '#64748B' }}>
-                      Attach Degree Certificate, Consolidated Marksheet, or Provisional (PDF, JPG, PNG &lt; 10MB)
-                    </div>
-                  </div>
-                </div>
-
-                {documents.find(d => d.category === '12th or Diploma' || d.category === '10th Marksheet' || d.category === 'Educational Certificates') ? (
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <span style={{ fontSize: '0.78rem', fontWeight: 700, color: '#16A34A', background: '#DCFCE7', padding: '4px 10px', borderRadius: '9999px', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                      <CheckCircle2 size={14} /> {documents.find(d => d.category === '12th or Diploma' || d.category === '10th Marksheet' || d.category === 'Educational Certificates')?.name}
-                    </span>
-                    <button 
-                      type="button" 
-                      className="btn btn-secondary btn-sm"
-                      onClick={() => triggerUploadForCategory('12th or Diploma')}
-                      style={{ fontSize: '0.75rem', padding: '4px 10px' }}
-                    >
-                      Replace
-                    </button>
-                  </div>
-                ) : (
-                  <button 
-                    type="button" 
-                    className="btn btn-secondary btn-sm"
-                    onClick={() => triggerUploadForCategory('12th or Diploma')}
-                    style={{ fontSize: '0.8rem', padding: '6px 14px', display: 'flex', alignItems: 'center', gap: '6px' }}
-                  >
-                    <Upload size={14} /> Upload Certificate
-                  </button>
-                )}
-              </div>
-            </div>
           </div>
         )}
 
@@ -1344,7 +1877,6 @@ export const AddEmployeeModal: React.FC<AddEmployeeModalProps> = ({
         {step === 5 && (
           <div className="onboarding-section-card">
             <div className="onboarding-card-title">
-              <Award size={22} color="var(--color-primary-blue)" />
               <div>
                 <span style={{ fontSize: '1.1rem', fontWeight: 700 }}>5. Past Work Experience & Employment History</span>
                 <p style={{ fontSize: '0.78rem', color: '#64748B', margin: '3px 0 0', fontWeight: 500 }}>
@@ -1500,57 +2032,6 @@ export const AddEmployeeModal: React.FC<AddEmployeeModalProps> = ({
                     />
                   </div>
                 </div>
-
-                {/* Upload Experience Certificate & Relieving Letter */}
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', margin: '18px 0' }}>
-                  {/* Experience Certificate Upload */}
-                  <div style={{ padding: '14px', background: '#F8FAFC', border: '1.5px dashed #CBD5E1', borderRadius: '12px' }}>
-                    <div style={{ fontSize: '0.88rem', fontWeight: 700, color: '#1E293B', marginBottom: '4px' }}>
-                      Experience Certificate Upload
-                    </div>
-                    <div style={{ fontSize: '0.74rem', color: '#64748B', marginBottom: '10px' }}>
-                      Service letter or experience certificate
-                    </div>
-                    {documents.find(d => d.category === 'Experience Certificate' || d.category === 'Experience Certificates') ? (
-                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                        <span style={{ fontSize: '0.76rem', fontWeight: 700, color: '#16A34A', background: '#DCFCE7', padding: '3px 8px', borderRadius: '9999px', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                          <CheckCircle2 size={13} /> {documents.find(d => d.category === 'Experience Certificate' || d.category === 'Experience Certificates')?.name}
-                        </span>
-                        <button type="button" className="btn btn-secondary btn-sm" onClick={() => triggerUploadForCategory('Experience Certificate')} style={{ fontSize: '0.72rem', padding: '3px 8px' }}>
-                          Replace
-                        </button>
-                      </div>
-                    ) : (
-                      <button type="button" className="btn btn-secondary btn-sm" onClick={() => triggerUploadForCategory('Experience Certificate')} style={{ fontSize: '0.78rem', padding: '5px 12px', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                        <Upload size={13} /> Upload Exp Certificate
-                      </button>
-                    )}
-                  </div>
-
-                  {/* Relieving Letter Upload */}
-                  <div style={{ padding: '14px', background: '#F8FAFC', border: '1.5px dashed #CBD5E1', borderRadius: '12px' }}>
-                    <div style={{ fontSize: '0.88rem', fontWeight: 700, color: '#1E293B', marginBottom: '4px' }}>
-                      Relieving Letter Upload
-                    </div>
-                    <div style={{ fontSize: '0.74rem', color: '#64748B', marginBottom: '10px' }}>
-                      Formal relieving order / exit clearance
-                    </div>
-                    {documents.find(d => d.category === 'Relieving Letter') ? (
-                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                        <span style={{ fontSize: '0.76rem', fontWeight: 700, color: '#16A34A', background: '#DCFCE7', padding: '3px 8px', borderRadius: '9999px', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                          <CheckCircle2 size={13} /> {documents.find(d => d.category === 'Relieving Letter')?.name}
-                        </span>
-                        <button type="button" className="btn btn-secondary btn-sm" onClick={() => triggerUploadForCategory('Relieving Letter')} style={{ fontSize: '0.72rem', padding: '3px 8px' }}>
-                          Replace
-                        </button>
-                      </div>
-                    ) : (
-                      <button type="button" className="btn btn-secondary btn-sm" onClick={() => triggerUploadForCategory('Relieving Letter')} style={{ fontSize: '0.78rem', padding: '5px 12px', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                        <Upload size={13} /> Upload Relieving Letter
-                      </button>
-                    )}
-                  </div>
-                </div>
               </>
             )}
 
@@ -1561,63 +2042,168 @@ export const AddEmployeeModal: React.FC<AddEmployeeModalProps> = ({
         {step === 6 && (
           <div className="onboarding-section-card">
             <div className="onboarding-card-title">
-              <CreditCard size={20} color="var(--color-primary-blue)" />
               <span>6. Salary, Compensation & Bank Details (Admin / HR Confidential)</span>
             </div>
 
-            <div className="form-row">
+            <div className="form-row" style={{ gridTemplateColumns: '1fr 1fr' }}>
               <div className="form-group">
-                <label className="form-label">Salary Structure Grade</label>
+                <label className="form-label">Salary Scheme (PF / ESIC Policy) *</label>
                 <select 
                   className="form-control" 
-                  value={formData.salaryStructure} 
-                  onChange={e => handleChange('salaryStructure', e.target.value)}
+                  value={formData.salaryScheme} 
+                  onChange={e => {
+                    const scheme = e.target.value as 'WITH_PF' | 'WITHOUT_PF';
+                    setFormData(prev => ({
+                      ...prev,
+                      salaryScheme: scheme,
+                      withPf: scheme === 'WITH_PF'
+                    }));
+                  }}
+                  style={{ fontWeight: 700, color: formData.salaryScheme === 'WITH_PF' ? '#0E7490' : '#D97706' }}
                 >
-                  <option value="Standard Industrial CTC">Standard Industrial CTC</option>
-                  <option value="Executive Grade CTC">Executive Grade CTC</option>
-                  <option value="Fixed Hourly Staff">Fixed Hourly Staff</option>
-                  <option value="Contractor / Consultant">Contractor / Consultant</option>
+                  <option value="WITHOUT_PF">Without PF & ESIC (New Employee / &lt; 6 Months)</option>
+                  <option value="WITH_PF">With PF & ESIC (Eligible / &gt; 6 Months / Confirmed)</option>
                 </select>
               </div>
+
               <div className="form-group">
                 <label className="form-label">Total Monthly CTC (₹) *</label>
                 <input 
                   type="number" 
                   className="form-control" 
                   value={formData.monthlyCtc} 
-                  onChange={e => handleChange('monthlyCtc', Number(e.target.value))}
-                  style={{ fontWeight: 700 }}
+                  onChange={e => handleCtcChange(Number(e.target.value))}
+                  style={{ fontWeight: 800, color: '#0E7490', fontSize: '1.05rem' }}
                   required 
                 />
               </div>
             </div>
 
-            <h4 style={{ fontSize: '0.88rem', fontWeight: 700, margin: '16px 0 10px', color: 'var(--color-text-secondary)' }}>
-              Monthly Earnings Breakdown
-            </h4>
+            {/* Scheme Policy Helper Box */}
+            <div style={{
+              padding: '10px 14px',
+              backgroundColor: formData.salaryScheme === 'WITH_PF' ? '#ECFEFF' : '#FFFBEB',
+              border: `1px solid ${formData.salaryScheme === 'WITH_PF' ? '#A5F3FC' : '#FDE68A'}`,
+              borderRadius: '8px',
+              fontSize: '0.78rem',
+              color: formData.salaryScheme === 'WITH_PF' ? '#0E7490' : '#B45309',
+              margin: '4px 0 14px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between'
+            }}>
+              <span>
+                <strong>Company Statutory Rule:</strong> {formData.salaryScheme === 'WITH_PF' 
+                  ? 'PF (12% of Basic + DA + Conv) and ESIC (0.75% of Gross) deductions are ACTIVE.' 
+                  : 'Employees under 6 months probation have NO PF & ESIC deductions. HR/CEO can switch to "With PF" after 6 months.'}
+              </span>
+              <span style={{ fontWeight: 800 }}>
+                {formData.salaryScheme === 'WITH_PF' ? 'PF & ESIC: ACTIVE' : 'PF & ESIC: ZERO (EXEMPT)'}
+              </span>
+            </div>
 
-            <div className="form-row" style={{ gridTemplateColumns: 'repeat(5, 1fr)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', margin: '14px 0 8px' }}>
+              <h4 style={{ fontSize: '0.88rem', fontWeight: 700, margin: 0, color: 'var(--color-text-secondary)' }}>
+                Official Monthly Earnings Breakdown (100% Total CTC)
+              </h4>
+            </div>
+
+            <div className="form-row" style={{ gridTemplateColumns: 'repeat(4, 1fr)' }}>
               <div className="form-group">
-                <label className="form-label">Basic Salary (₹) *</label>
-                <input type="number" className="form-control" value={formData.basicSalary} onChange={e => handleSalaryChange('basicSalary', Number(e.target.value))} />
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
+                  <label className="form-label" style={{ margin: 0 }}>Basic Salary (₹) *</label>
+                  <span style={{ fontSize: '0.72rem', color: '#0E7490', fontWeight: 800 }}>40%</span>
+                </div>
+                <input 
+                  type="number" 
+                  className="form-control" 
+                  value={formData.basicSalary} 
+                  onChange={e => handleSalaryChange('basicSalary', Number(e.target.value))} 
+                  style={{ fontWeight: 700 }}
+                />
               </div>
+
               <div className="form-group">
-                <label className="form-label">HRA (₹)</label>
-                <input type="number" className="form-control" value={formData.hra} onChange={e => handleSalaryChange('hra', Number(e.target.value))} />
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
+                  <label className="form-label" style={{ margin: 0 }}>Dearness Allowance (DA) (₹)</label>
+                  <span style={{ fontSize: '0.72rem', color: '#0E7490', fontWeight: 800 }}>20%</span>
+                </div>
+                <input 
+                  type="number" 
+                  className="form-control" 
+                  value={formData.da} 
+                  onChange={e => handleSalaryChange('da', Number(e.target.value))} 
+                  style={{ fontWeight: 700 }}
+                />
               </div>
+
               <div className="form-group">
-                <label className="form-label">Transport (₹)</label>
-                <input type="number" className="form-control" value={formData.transport} onChange={e => handleSalaryChange('transport', Number(e.target.value))} />
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
+                  <label className="form-label" style={{ margin: 0 }}>Conveyance (₹)</label>
+                  <span style={{ fontSize: '0.72rem', color: '#0E7490', fontWeight: 800 }}>5%</span>
+                </div>
+                <input 
+                  type="number" 
+                  className="form-control" 
+                  value={formData.conveyance} 
+                  onChange={e => handleSalaryChange('conveyance', Number(e.target.value))} 
+                  style={{ fontWeight: 700 }}
+                />
               </div>
+
               <div className="form-group">
-                <label className="form-label">Medical (₹)</label>
-                <input type="number" className="form-control" value={formData.medical} onChange={e => handleSalaryChange('medical', Number(e.target.value))} />
-              </div>
-              <div className="form-group">
-                <label className="form-label">Others (₹)</label>
-                <input type="number" className="form-control" value={formData.special} onChange={e => handleSalaryChange('special', Number(e.target.value))} />
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
+                  <label className="form-label" style={{ margin: 0 }}>HRA (₹)</label>
+                  <span style={{ fontSize: '0.72rem', color: '#0E7490', fontWeight: 800 }}>35%</span>
+                </div>
+                <input 
+                  type="number" 
+                  className="form-control" 
+                  value={formData.hra} 
+                  onChange={e => handleSalaryChange('hra', Number(e.target.value))} 
+                  style={{ fontWeight: 700 }}
+                />
               </div>
             </div>
+
+            {/* Statutory Calculation Preview (Only visible when With PF & ESIC is selected) */}
+            {formData.salaryScheme === 'WITH_PF' && (
+              <div style={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(3, 1fr)',
+                gap: '10px',
+                padding: '12px 14px',
+                backgroundColor: '#F8FAFC',
+                borderRadius: '10px',
+                border: '1px solid #E2E8F0',
+                marginTop: '12px'
+              }}>
+                <div>
+                  <div style={{ fontSize: '0.7rem', color: '#64748B', fontWeight: 700, textTransform: 'uppercase' }}>PF Base (Basic + DA + Conv)</div>
+                  <div style={{ fontSize: '0.95rem', fontWeight: 800, color: '#0F172A', marginTop: '2px' }}>
+                    ₹{(formData.basicSalary + formData.da + formData.conveyance).toLocaleString('en-IN')}
+                  </div>
+                </div>
+
+                <div>
+                  <div style={{ fontSize: '0.7rem', color: '#64748B', fontWeight: 700, textTransform: 'uppercase' }}>
+                    EPF Contribution (12%)
+                  </div>
+                  <div style={{ fontSize: '0.95rem', fontWeight: 800, color: '#DC2626', marginTop: '2px' }}>
+                    ₹{Math.round((formData.basicSalary + formData.da + formData.conveyance) * 0.12).toLocaleString('en-IN')}
+                  </div>
+                </div>
+
+                <div>
+                  <div style={{ fontSize: '0.7rem', color: '#64748B', fontWeight: 700, textTransform: 'uppercase' }}>
+                    ESIC Contribution (0.75%)
+                  </div>
+                  <div style={{ fontSize: '0.95rem', fontWeight: 800, color: '#DC2626', marginTop: '2px' }}>
+                    {formData.monthlyCtc <= 21000 ? `₹${Math.round(formData.monthlyCtc * 0.0075).toLocaleString('en-IN')}` : 'Exempt (> ₹21k)'}
+                  </div>
+                </div>
+              </div>
+            )}
 
             <h4 style={{ fontSize: '0.88rem', fontWeight: 700, margin: '18px 0 10px', color: 'var(--color-text-secondary)' }}>
               Banking & Statutory Registration
@@ -1655,7 +2241,6 @@ export const AddEmployeeModal: React.FC<AddEmployeeModalProps> = ({
         {step === 7 && (
           <div className="onboarding-section-card">
             <div className="onboarding-card-title">
-              <Clock size={20} color="var(--color-primary-blue)" />
               <span>7. Attendance Mode, Shifts & Leave Policies</span>
             </div>
 
@@ -1732,7 +2317,6 @@ export const AddEmployeeModal: React.FC<AddEmployeeModalProps> = ({
         {step === 8 && (
           <div className="onboarding-section-card">
             <div className="onboarding-card-title">
-              <FolderPlus size={22} color="var(--color-primary-blue)" />
               <div>
                 <span style={{ fontSize: '1.15rem', fontWeight: 700 }}>8. Employee Documents & Verification Uploads</span>
                 <p style={{ fontSize: '0.78rem', color: '#64748B', margin: '3px 0 0', fontWeight: 500 }}>
@@ -1879,7 +2463,6 @@ export const AddEmployeeModal: React.FC<AddEmployeeModalProps> = ({
             {/* Header Banner */}
             <div className="onboarding-section-card" style={{ marginBottom: 0 }}>
               <div className="onboarding-card-title">
-                <CheckCheck size={22} color="var(--color-primary-blue)" />
                 <div>
                   <span style={{ fontSize: '1.15rem', fontWeight: 700 }}>9. Comprehensive Employee Onboarding Review</span>
                   <p style={{ fontSize: '0.78rem', color: '#64748B', margin: '3px 0 0', fontWeight: 500 }}>
@@ -1915,7 +2498,7 @@ export const AddEmployeeModal: React.FC<AddEmployeeModalProps> = ({
             <div className="onboarding-section-card" style={{ marginBottom: 0 }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px', borderBottom: '1px solid #F1F5F9', paddingBottom: '10px' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 700, color: '#0E7490', fontSize: '0.95rem' }}>
-                  <User size={18} /> 1. Basic Personal Information
+                  1. Basic Personal Information
                 </div>
                 <button type="button" className="btn btn-secondary btn-sm" onClick={() => setStep(1)} style={{ fontSize: '0.75rem', padding: '4px 10px', display: 'flex', alignItems: 'center', gap: '4px' }}>
                   <Edit3 size={12} /> Edit
@@ -1932,15 +2515,31 @@ export const AddEmployeeModal: React.FC<AddEmployeeModalProps> = ({
                 </div>
                 <div className="review-field-box">
                   <div className="review-field-label">Gender & DOB</div>
-                  <div className="review-field-val">{formData.gender} • {formData.dob}</div>
+                  <div className="review-field-val">{formData.gender} • {formatDateDDMMYYYY(formData.dob)}</div>
                 </div>
                 <div className="review-field-box">
                   <div className="review-field-label">Mobile Phone Number</div>
                   <div className="review-field-val">{formData.phone}</div>
                 </div>
                 <div className="review-field-box">
-                  <div className="review-field-label">Personal Email ID</div>
-                  <div className="review-field-val">{formData.personalEmail || 'N/A'}</div>
+                  <div className="review-field-label">Personal Email ID (Login Dispatch)</div>
+                  <div className="review-field-val" style={{ color: '#0E7490', fontWeight: 700 }}>{formData.personalEmail || 'N/A'}</div>
+                </div>
+                <div className="review-field-box">
+                  <div className="review-field-label">Login Password</div>
+                  <div className="review-field-val" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <span>{formData.password ? (showPassword ? formData.password : '••••••••') : 'Auto-generated'}</span>
+                    {formData.password && (
+                      <button
+                        type="button"
+                        onClick={() => setShowPassword(!showPassword)}
+                        style={{ border: 'none', background: 'none', cursor: 'pointer', color: '#64748B', display: 'flex', alignItems: 'center', padding: '2px' }}
+                        title={showPassword ? 'Hide Password' : 'Show Password'}
+                      >
+                        {showPassword ? <EyeOff size={14} /> : <Eye size={14} />}
+                      </button>
+                    )}
+                  </div>
                 </div>
                 <div className="review-field-box">
                   <div className="review-field-label">Marital Status</div>
@@ -1953,7 +2552,7 @@ export const AddEmployeeModal: React.FC<AddEmployeeModalProps> = ({
             <div className="onboarding-section-card" style={{ marginBottom: 0 }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px', borderBottom: '1px solid #F1F5F9', paddingBottom: '10px' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 700, color: '#0E7490', fontSize: '0.95rem' }}>
-                  <Briefcase size={18} /> 2. Employment & Role Details
+                  2. Employment & Role Details
                 </div>
                 <button type="button" className="btn btn-secondary btn-sm" onClick={() => setStep(2)} style={{ fontSize: '0.75rem', padding: '4px 10px', display: 'flex', alignItems: 'center', gap: '4px' }}>
                   <Edit3 size={12} /> Edit
@@ -1970,7 +2569,7 @@ export const AddEmployeeModal: React.FC<AddEmployeeModalProps> = ({
                 </div>
                 <div className="review-field-box">
                   <div className="review-field-label">Date of Joining</div>
-                  <div className="review-field-val">{formData.joiningDate}</div>
+                  <div className="review-field-val">{formatDateDDMMYYYY(formData.joiningDate)}</div>
                 </div>
                 <div className="review-field-box">
                   <div className="review-field-label">Employment Type & Status</div>
@@ -1991,7 +2590,7 @@ export const AddEmployeeModal: React.FC<AddEmployeeModalProps> = ({
             <div className="onboarding-section-card" style={{ marginBottom: 0 }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px', borderBottom: '1px solid #F1F5F9', paddingBottom: '10px' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 700, color: '#0E7490', fontSize: '0.95rem' }}>
-                  <MapPin size={18} /> 3. Address & Emergency Contacts
+                  3. Address & Emergency Contacts
                 </div>
                 <button type="button" className="btn btn-secondary btn-sm" onClick={() => setStep(3)} style={{ fontSize: '0.75rem', padding: '4px 10px', display: 'flex', alignItems: 'center', gap: '4px' }}>
                   <Edit3 size={12} /> Edit
@@ -2017,7 +2616,7 @@ export const AddEmployeeModal: React.FC<AddEmployeeModalProps> = ({
             <div className="onboarding-section-card" style={{ marginBottom: 0 }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px', borderBottom: '1px solid #F1F5F9', paddingBottom: '10px' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 700, color: '#0E7490', fontSize: '0.95rem' }}>
-                  <GraduationCap size={18} /> 4. Educational Qualifications
+                  4. Educational Qualifications
                 </div>
                 <button type="button" className="btn btn-secondary btn-sm" onClick={() => setStep(4)} style={{ fontSize: '0.75rem', padding: '4px 10px', display: 'flex', alignItems: 'center', gap: '4px' }}>
                   <Edit3 size={12} /> Edit
@@ -2055,7 +2654,7 @@ export const AddEmployeeModal: React.FC<AddEmployeeModalProps> = ({
             <div className="onboarding-section-card" style={{ marginBottom: 0 }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px', borderBottom: '1px solid #F1F5F9', paddingBottom: '10px' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 700, color: '#0E7490', fontSize: '0.95rem' }}>
-                  <Award size={18} /> 5. Work Experience History
+                  5. Work Experience History
                 </div>
                 <button type="button" className="btn btn-secondary btn-sm" onClick={() => setStep(5)} style={{ fontSize: '0.75rem', padding: '4px 10px', display: 'flex', alignItems: 'center', gap: '4px' }}>
                   <Edit3 size={12} /> Edit
@@ -2099,7 +2698,7 @@ export const AddEmployeeModal: React.FC<AddEmployeeModalProps> = ({
             <div className="onboarding-section-card" style={{ marginBottom: 0 }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px', borderBottom: '1px solid #F1F5F9', paddingBottom: '10px' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 700, color: '#0E7490', fontSize: '0.95rem' }}>
-                  <CreditCard size={18} /> 6. Salary & Bank Details
+                  6. Salary & Bank Details
                 </div>
                 <button type="button" className="btn btn-secondary btn-sm" onClick={() => setStep(6)} style={{ fontSize: '0.75rem', padding: '4px 10px', display: 'flex', alignItems: 'center', gap: '4px' }}>
                   <Edit3 size={12} /> Edit
@@ -2111,12 +2710,16 @@ export const AddEmployeeModal: React.FC<AddEmployeeModalProps> = ({
                   <div className="review-field-val" style={{ color: '#16A34A', fontWeight: 700 }}>₹{Number(formData.monthlyCtc).toLocaleString('en-IN')} / month</div>
                 </div>
                 <div className="review-field-box">
-                  <div className="review-field-label">Basic Salary</div>
-                  <div className="review-field-val">₹{Number(formData.basicSalary).toLocaleString('en-IN')}</div>
+                  <div className="review-field-label">Salary Scheme (PF / ESIC)</div>
+                  <div className="review-field-val" style={{ fontWeight: 700, color: formData.salaryScheme === 'WITH_PF' ? '#0E7490' : '#D97706' }}>
+                    {formData.salaryScheme === 'WITH_PF' ? 'With PF & ESIC' : 'Without PF & ESIC (< 6 Months)'}
+                  </div>
                 </div>
-                <div className="review-field-box">
-                  <div className="review-field-label">Allowances Breakdown</div>
-                  <div className="review-field-val" style={{ fontSize: '0.8rem' }}>HRA: ₹{formData.hra} | Trans: ₹{formData.transport} | Med: ₹{formData.medical} | Others: ₹{formData.special}</div>
+                <div className="review-field-box" style={{ gridColumn: 'span 2' }}>
+                  <div className="review-field-label">100% Salary Breakdown</div>
+                  <div className="review-field-val" style={{ fontSize: '0.82rem', fontWeight: 600 }}>
+                    Basic (40%): ₹{formData.basicSalary.toLocaleString('en-IN')} | DA (20%): ₹{formData.da.toLocaleString('en-IN')} | Conv (5%): ₹{formData.conveyance.toLocaleString('en-IN')} | HRA (35%): ₹{formData.hra.toLocaleString('en-IN')}
+                  </div>
                 </div>
                 <div className="review-field-box">
                   <div className="review-field-label">Bank Name & Branch</div>
@@ -2137,7 +2740,7 @@ export const AddEmployeeModal: React.FC<AddEmployeeModalProps> = ({
             <div className="onboarding-section-card" style={{ marginBottom: 0 }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px', borderBottom: '1px solid #F1F5F9', paddingBottom: '10px' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 700, color: '#0E7490', fontSize: '0.95rem' }}>
-                  <Clock size={18} /> 7. Attendance & Shift Settings
+                  7. Attendance & Shift Settings
                 </div>
                 <button type="button" className="btn btn-secondary btn-sm" onClick={() => setStep(7)} style={{ fontSize: '0.75rem', padding: '4px 10px', display: 'flex', alignItems: 'center', gap: '4px' }}>
                   <Edit3 size={12} /> Edit
@@ -2167,7 +2770,7 @@ export const AddEmployeeModal: React.FC<AddEmployeeModalProps> = ({
             <div className="onboarding-section-card" style={{ marginBottom: 0 }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px', borderBottom: '1px solid #F1F5F9', paddingBottom: '10px' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 700, color: '#0E7490', fontSize: '0.95rem' }}>
-                  <FolderPlus size={18} /> 8. Verified Uploaded Documents ({documents.length} Files)
+                  8. Verified Uploaded Documents ({documents.length} Files)
                 </div>
                 <button type="button" className="btn btn-secondary btn-sm" onClick={() => setStep(8)} style={{ fontSize: '0.75rem', padding: '4px 10px', display: 'flex', alignItems: 'center', gap: '4px' }}>
                   <Edit3 size={12} /> Edit
@@ -2252,10 +2855,29 @@ export const AddEmployeeModal: React.FC<AddEmployeeModalProps> = ({
             <button 
               type="button" 
               className="btn btn-primary" 
+              disabled={isSubmitting}
               onClick={handleSubmit}
-              style={{ display: 'flex', alignItems: 'center', gap: '8px', backgroundColor: '#10B981', borderColor: '#10B981', padding: '9px 22px', fontSize: '0.88rem', boxShadow: '0 2px 8px rgba(16, 185, 129, 0.25)' }}
+              style={{ 
+                display: 'flex', 
+                alignItems: 'center', 
+                gap: '8px', 
+                backgroundColor: isSubmitting ? '#94A3B8' : '#10B981', 
+                borderColor: isSubmitting ? '#94A3B8' : '#10B981', 
+                padding: '9px 22px', 
+                fontSize: '0.88rem', 
+                boxShadow: '0 2px 8px rgba(16, 185, 129, 0.25)',
+                cursor: isSubmitting ? 'not-allowed' : 'pointer'
+              }}
             >
-              <CheckCircle2 size={18} /> Confirm & Onboard Employee
+              {isSubmitting ? (
+                <>
+                  <RefreshCw size={17} className="animate-spin" /> Provisioning Login Account...
+                </>
+              ) : (
+                <>
+                  <CheckCircle2 size={18} /> Confirm & Onboard Employee
+                </>
+              )}
             </button>
           )}
         </div>

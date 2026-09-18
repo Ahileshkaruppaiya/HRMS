@@ -165,9 +165,24 @@ CREATE TABLE IF NOT EXISTS public.employees (
     gps_allowed         BOOLEAN NOT NULL DEFAULT TRUE,
     face_registered     BOOLEAN NOT NULL DEFAULT FALSE,
     face_photo_url      TEXT,
+    must_change_password BOOLEAN NOT NULL DEFAULT TRUE,
+    account_status      TEXT NOT NULL DEFAULT 'ACTIVE',
+    credential_email_status TEXT NOT NULL DEFAULT 'PENDING',
+    credential_email_sent_at TIMESTAMPTZ,
+    last_login_at       TIMESTAMPTZ,
     role_id             UUID NOT NULL REFERENCES public.roles(id) ON DELETE RESTRICT,
     created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at          TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- --- auth_audit_logs (audit log for employee login lifecycle) ---
+CREATE TABLE IF NOT EXISTS public.auth_audit_logs (
+    id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    action       TEXT NOT NULL,
+    employee_id  TEXT NOT NULL,
+    performed_by TEXT NOT NULL,
+    performed_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    metadata     JSONB
 );
 
 -- Circular FK: departments.head_id -> employees.id
@@ -1204,7 +1219,149 @@ CREATE POLICY docs_auth_access ON storage.objects FOR ALL TO authenticated USING
 );
 
 -- ============================================================
--- 9. Re-runability cleanup
+-- 10. Field Duty & Live Travel Tracking (VRM Enterprise)
+-- ============================================================
+
+-- --- field_duty_assignments ---
+CREATE TABLE IF NOT EXISTS public.field_duty_assignments (
+    id                     UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    employee_id            UUID NOT NULL REFERENCES public.employees(id) ON DELETE RESTRICT,
+    department             TEXT,
+    duty_type              TEXT NOT NULL, -- 'Site Visit', 'Customer Visit', 'Vendor Visit', 'Travel', 'Field Work', 'Other'
+    schedule_type          TEXT NOT NULL DEFAULT 'One Day', -- 'One Day', 'Date Range', 'Weekly', 'Monthly', 'Custom Dates'
+    start_date             DATE NOT NULL,
+    end_date               DATE NOT NULL,
+    start_time             TIME NOT NULL,
+    end_time               TIME NOT NULL,
+    customer_site_name     TEXT NOT NULL,
+    site_address           TEXT,
+    purpose                TEXT NOT NULL,
+    tracking_required      BOOLEAN NOT NULL DEFAULT TRUE,
+    travel_km_required     BOOLEAN NOT NULL DEFAULT TRUE,
+    attendance_type        TEXT NOT NULL DEFAULT 'Site Geofence', -- 'Site Geofence', 'Flexible Field Check-in'
+    site_lat               DOUBLE PRECISION,
+    site_lng               DOUBLE PRECISION,
+    allowed_radius_meters  INTEGER NOT NULL DEFAULT 200,
+    notes                  TEXT,
+    status                 TEXT NOT NULL DEFAULT 'Scheduled', -- 'Scheduled', 'Active', 'Completed', 'Cancelled'
+    created_by             UUID REFERENCES public.employees(id),
+    created_at             TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at             TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- --- field_trip_sessions ---
+CREATE TABLE IF NOT EXISTS public.field_trip_sessions (
+    id                     UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    assignment_id          UUID NOT NULL REFERENCES public.field_duty_assignments(id) ON DELETE CASCADE,
+    employee_id            UUID NOT NULL REFERENCES public.employees(id) ON DELETE RESTRICT,
+    trip_start_time        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    trip_end_time          TIMESTAMPTZ,
+    start_lat              DOUBLE PRECISION NOT NULL,
+    start_lng              DOUBLE PRECISION NOT NULL,
+    start_address          TEXT,
+    end_lat                DOUBLE PRECISION,
+    end_lng                DOUBLE PRECISION,
+    end_address            TEXT,
+    total_km               DOUBLE PRECISION NOT NULL DEFAULT 0.00,
+    status                 TEXT NOT NULL DEFAULT 'Active', -- 'Active', 'Completed', 'Cancelled'
+    check_in_time          TIMESTAMPTZ,
+    check_out_time         TIMESTAMPTZ,
+    created_at             TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at             TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- --- field_location_points ---
+CREATE TABLE IF NOT EXISTS public.field_location_points (
+    id                     UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    trip_id                UUID NOT NULL REFERENCES public.field_trip_sessions(id) ON DELETE CASCADE,
+    assignment_id          UUID NOT NULL REFERENCES public.field_duty_assignments(id) ON DELETE CASCADE,
+    employee_id            UUID NOT NULL REFERENCES public.employees(id) ON DELETE RESTRICT,
+    recorded_at            TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    latitude               DOUBLE PRECISION NOT NULL,
+    longitude              DOUBLE PRECISION NOT NULL,
+    accuracy               DOUBLE PRECISION,
+    speed                  DOUBLE PRECISION,
+    battery_level          DOUBLE PRECISION,
+    synced_offline         BOOLEAN NOT NULL DEFAULT FALSE,
+    created_at             TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- --- field_tracking_alerts ---
+CREATE TABLE IF NOT EXISTS public.field_tracking_alerts (
+    id                     UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    assignment_id          UUID REFERENCES public.field_duty_assignments(id) ON DELETE CASCADE,
+    employee_id            UUID NOT NULL REFERENCES public.employees(id) ON DELETE RESTRICT,
+    alert_type             TEXT NOT NULL, -- 'GPS Disabled', 'Location Permission Denied', 'No Location Received', 'Low Accuracy', 'Tracking Interrupted'
+    issue_start_time       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    issue_end_time         TIMESTAMPTZ,
+    duration_minutes       INTEGER,
+    last_known_location    TEXT,
+    last_known_lat         DOUBLE PRECISION,
+    last_known_lng         DOUBLE PRECISION,
+    status                 TEXT NOT NULL DEFAULT 'Open', -- 'Open', 'Resolved'
+    created_at             TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at             TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- Triggers for updated_at
+DROP TRIGGER IF EXISTS trg_field_duty_updated_at    ON public.field_duty_assignments;
+DROP TRIGGER IF EXISTS trg_field_trips_updated_at   ON public.field_trip_sessions;
+DROP TRIGGER IF EXISTS trg_field_alerts_updated_at  ON public.field_tracking_alerts;
+
+CREATE TRIGGER trg_field_duty_updated_at   BEFORE UPDATE ON public.field_duty_assignments FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
+CREATE TRIGGER trg_field_trips_updated_at  BEFORE UPDATE ON public.field_trip_sessions    FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
+CREATE TRIGGER trg_field_alerts_updated_at BEFORE UPDATE ON public.field_tracking_alerts FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
+
+-- Enable RLS
+ALTER TABLE public.field_duty_assignments ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.field_trip_sessions    ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.field_location_points  ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.field_tracking_alerts  ENABLE ROW LEVEL SECURITY;
+
+-- RLS Policies for Field Duty
+CREATE POLICY field_duty_select ON public.field_duty_assignments FOR SELECT TO authenticated USING (
+    public.get_current_role_key() IN ('super_admin','hr_admin','hr_manager','ceo','dept_manager')
+    OR employee_id = public.get_current_employee_id()
+);
+CREATE POLICY field_duty_write ON public.field_duty_assignments FOR ALL TO authenticated USING (
+    public.get_current_role_key() IN ('super_admin','hr_admin','hr_manager','ceo','dept_manager')
+);
+
+-- RLS Policies for Trip Sessions
+CREATE POLICY field_trips_select ON public.field_trip_sessions FOR SELECT TO authenticated USING (
+    public.get_current_role_key() IN ('super_admin','hr_admin','hr_manager','ceo','dept_manager')
+    OR employee_id = public.get_current_employee_id()
+);
+CREATE POLICY field_trips_insert ON public.field_trip_sessions FOR INSERT TO authenticated WITH CHECK (
+    employee_id = public.get_current_employee_id()
+    OR public.get_current_role_key() IN ('super_admin','hr_admin','hr_manager','ceo')
+);
+CREATE POLICY field_trips_update ON public.field_trip_sessions FOR UPDATE TO authenticated USING (
+    employee_id = public.get_current_employee_id()
+    OR public.get_current_role_key() IN ('super_admin','hr_admin','hr_manager','ceo')
+);
+
+-- RLS Policies for Location Points
+CREATE POLICY field_points_select ON public.field_location_points FOR SELECT TO authenticated USING (
+    public.get_current_role_key() IN ('super_admin','hr_admin','hr_manager','ceo','dept_manager')
+    OR employee_id = public.get_current_employee_id()
+);
+CREATE POLICY field_points_insert ON public.field_location_points FOR INSERT TO authenticated WITH CHECK (
+    employee_id = public.get_current_employee_id()
+    OR public.get_current_role_key() IN ('super_admin','hr_admin','hr_manager','ceo')
+);
+
+-- RLS Policies for Tracking Alerts
+CREATE POLICY field_alerts_select ON public.field_tracking_alerts FOR SELECT TO authenticated USING (
+    public.get_current_role_key() IN ('super_admin','hr_admin','hr_manager','ceo','dept_manager')
+    OR employee_id = public.get_current_employee_id()
+);
+CREATE POLICY field_alerts_write ON public.field_tracking_alerts FOR ALL TO authenticated USING (
+    public.get_current_role_key() IN ('super_admin','hr_admin','hr_manager','ceo')
+);
+
+-- ============================================================
+-- 11. Re-runability cleanup
 -- ============================================================
 DROP FUNCTION IF EXISTS public.seed_permissions(UUID, TEXT[], TEXT[]);
 

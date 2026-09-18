@@ -31,7 +31,7 @@ export const OfferLetterModal: React.FC<OfferLetterModalProps> = ({
   onClose,
   initialEmployee
 }) => {
-  const { employees, updateEmployee } = useHRMS();
+  const { employees, updateEmployee, currentUser } = useHRMS();
 
   // Selected Employee
   const [selectedEmpId, setSelectedEmpId] = useState<string>(
@@ -508,11 +508,11 @@ export const OfferLetterModal: React.FC<OfferLetterModalProps> = ({
                 <div>
                   <div style={{ height: '45px', display: 'flex', alignItems: 'flex-end' }}>
                     <div style={{ fontFamily: 'cursive', fontSize: '1.2rem', color: '#0f172a', transform: 'rotate(-3deg)' }}>
-                      Pavithra
+                      {currentUser?.name || 'HR Manager'}
                     </div>
                   </div>
                   <div style={{ borderTop: '1px solid #475569', paddingTop: '6px', fontSize: '0.8rem' }}>
-                    <div style={{ fontWeight: 800, color: '#0f172a' }}>Pavithra</div>
+                    <div style={{ fontWeight: 800, color: '#0f172a' }}>{currentUser?.name || 'Authorized Signatory'}</div>
                     <div style={{ color: '#64748b' }}>HR Manager</div>
                     <div style={{ color: '#64748b', fontSize: '0.72rem' }}>VRM Structures Pvt. Ltd.</div>
                   </div>

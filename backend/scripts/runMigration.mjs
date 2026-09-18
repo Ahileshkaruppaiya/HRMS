@@ -2,14 +2,23 @@ import fs from 'fs';
 import path from 'path';
 import pg from 'pg';
 
+import dotenv from 'dotenv';
+dotenv.config();
+
 const { Client } = pg;
 
 async function run() {
+  const connectionString = process.env.DATABASE_URL;
+  if (!connectionString) {
+    console.error('DATABASE_URL environment variable is not defined.');
+    process.exit(1);
+  }
+
   const sqlPath = path.resolve('../schema.sql');
   const sql = fs.readFileSync(sqlPath, 'utf-8');
   
   const client = new Client({
-    connectionString: 'postgresql://postgres:Ahilesh%402004%40@db.psccqynqwebbtzdaqfqv.supabase.co:5432/postgres',
+    connectionString,
     ssl: { rejectUnauthorized: false },
   });
 

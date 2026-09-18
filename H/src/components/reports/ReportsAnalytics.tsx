@@ -280,7 +280,7 @@ export const ReportsAnalytics: React.FC = () => {
                 ) : (
                   filteredAttendance.map(a => (
                     <tr key={a.id}>
-                      <td>{a.date}</td>
+                      <td>{formatDateDDMMYYYY(a.date)}</td>
                       <td>{a.employeeName}</td>
                       <td>{a.department}</td>
                       <td>{a.checkIn || '--'}</td>

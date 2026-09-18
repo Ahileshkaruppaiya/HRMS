@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useHRMS } from '../../context/HRMSContext';
 import { Role } from '../../types/hrms';
+import { formatDateDDMMYYYY } from '../../utils/dateUtils';
 import { 
   User, 
   Lock, 
@@ -392,7 +393,7 @@ export const UserProfile: React.FC<UserProfileProps> = ({ onLogout, isEmbedded =
                     {currentUser.designation || 'CEO'} • {currentUser.department || 'Management'}
                   </div>
                   <div style={{ fontSize: '0.78rem', color: '#94a3b8', marginTop: '2px' }}>
-                    Employee Code: <strong>{profileForm.employeeId}</strong> • Member since {profileForm.joiningDate}
+                    Employee Code: <strong>{profileForm.employeeId}</strong> • Member since {formatDateDDMMYYYY(profileForm.joiningDate)}
                   </div>
                 </div>
               </div>

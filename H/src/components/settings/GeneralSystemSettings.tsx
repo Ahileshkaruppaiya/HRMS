@@ -29,13 +29,7 @@ export const GeneralSystemSettings: React.FC = () => {
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [formState, setFormState] = useState({ ...generalSystemConfig });
 
-  const [auditLogs] = useState([
-    { id: 'al-1', timestamp: '2026-09-06 21:40:12', user: 'Velmurugan (Super Admin)', action: 'Updated Attendance Grace Period to 15 mins', ip: '192.168.1.100' },
-    { id: 'al-2', timestamp: '2026-09-06 20:15:44', user: 'Pavithra (HR Admin)', action: 'Processed August 2026 Payroll batch for 14 employees', ip: '192.168.1.104' },
-    { id: 'al-3', timestamp: '2026-09-06 18:32:01', user: 'Velmurugan (Super Admin)', action: 'Added Corporate Asset AST-105 Total Station', ip: '192.168.1.100' },
-    { id: 'al-4', timestamp: '2026-09-06 16:10:28', user: 'Priya Natarajan (Finance)', action: 'Disbursed Advance Salary ADV-001 (₹35,000)', ip: '192.168.1.112' },
-    { id: 'al-5', timestamp: '2026-09-06 14:05:19', user: 'Ramesh Kumar (Production Head)', action: 'Approved Leave Request for Murugan S', ip: '192.168.1.108' }
-  ]);
+  const [auditLogs] = useState<{ id: string; timestamp: string; user: string; action: string; ip: string }[]>([]);
 
   const triggerToast = (msg: string) => {
     setToastMessage(msg);
@@ -274,14 +268,22 @@ export const GeneralSystemSettings: React.FC = () => {
             </tr>
           </thead>
           <tbody>
-            {auditLogs.map(log => (
-              <tr key={log.id} style={{ borderBottom: '1px solid #F1F5F9' }}>
-                <td style={{ padding: '12px 14px', fontSize: '0.82rem', color: '#64748B', fontFamily: 'monospace' }}>{log.timestamp}</td>
-                <td style={{ padding: '12px 14px', fontSize: '0.85rem', fontWeight: 700, color: '#1E293B' }}>{log.user}</td>
-                <td style={{ padding: '12px 14px', fontSize: '0.85rem', color: '#334155' }}>{log.action}</td>
-                <td style={{ padding: '12px 14px', fontSize: '0.82rem', color: '#64748B', fontFamily: 'monospace' }}>{log.ip}</td>
+            {auditLogs.length === 0 ? (
+              <tr>
+                <td colSpan={4} style={{ padding: '32px 14px', textAlign: 'center', color: '#64748B', fontSize: '0.85rem' }}>
+                  No audit trail records logged yet. System actions and policy modifications will appear here.
+                </td>
               </tr>
-            ))}
+            ) : (
+              auditLogs.map(log => (
+                <tr key={log.id} style={{ borderBottom: '1px solid #F1F5F9' }}>
+                  <td style={{ padding: '12px 14px', fontSize: '0.82rem', color: '#64748B', fontFamily: 'monospace' }}>{log.timestamp}</td>
+                  <td style={{ padding: '12px 14px', fontSize: '0.85rem', fontWeight: 700, color: '#1E293B' }}>{log.user}</td>
+                  <td style={{ padding: '12px 14px', fontSize: '0.85rem', color: '#334155' }}>{log.action}</td>
+                  <td style={{ padding: '12px 14px', fontSize: '0.82rem', color: '#64748B', fontFamily: 'monospace' }}>{log.ip}</td>
+                </tr>
+              ))
+            )}
           </tbody>
         </table>
       </div>

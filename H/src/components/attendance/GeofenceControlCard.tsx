@@ -148,7 +148,7 @@ export const GeofenceControlCard: React.FC<GeofenceControlCardProps> = ({ onLoca
 
   // Location Presets
   const locationPresets = [
-    { name: 'VRM Structures India Pvt Ltd', lat: 13.151968, lng: 80.2086053, badge: 'HQ India' },
+    { name: 'Businz HQ', lat: 13.151968, lng: 80.2086053, badge: 'HQ India' },
     { name: 'Chennai Tech Park', lat: 13.0827, lng: 80.2707, badge: 'IN Hub' },
     { name: 'Bangalore IT City', lat: 12.9716, lng: 77.5946, badge: 'IN R&D' },
     { name: 'San Francisco Office', lat: 37.7749, lng: -122.4194, badge: 'US Office' },

@@ -32,6 +32,7 @@ import { AttendanceCalendarView } from './AttendanceCalendarView';
 import { AttendanceAuditLogModal } from './AttendanceAuditLogModal';
 import { AttendanceTimePickerModal } from './AttendanceTimePickerModal';
 import { ReviewOvertimeView } from './ReviewOvertimeView';
+import { StandardFloatingActionBar } from '../common/StandardFloatingActionBar';
 
 interface AttendanceListProps {
   onBackToInsights?: () => void;
@@ -45,8 +46,27 @@ export const AttendanceList: React.FC<AttendanceListProps> = ({ onBackToInsights
     departments, 
     currentUser,
     submitAttendanceCorrection,
-    correctAttendanceRecord 
+    correctAttendanceRecord,
+    shifts
   } = useHRMS();
+
+  // Multi-row selection state for attendance table
+  const [selectedAttendanceIds, setSelectedAttendanceIds] = useState<string[]>([]);
+
+  const handleToggleAttendance = (id: string) => {
+    setSelectedAttendanceIds(prev => 
+      prev.includes(id) ? prev.filter(aId => aId !== id) : [...prev, id]
+    );
+  };
+
+  const handleToggleSelectAll = () => {
+    if (filteredRecords.length > 0 && filteredRecords.every(r => selectedAttendanceIds.includes(r.id))) {
+      setSelectedAttendanceIds(prev => prev.filter(id => !filteredRecords.some(r => r.id === id)));
+    } else {
+      const pageIds = filteredRecords.map(r => r.id);
+      setSelectedAttendanceIds(prev => Array.from(new Set([...prev, ...pageIds])));
+    }
+  };
 
   // Navigation sub-tabs: 'cards' | 'review_ot' | 'table' | 'calendar'
   const [activeTab, setActiveTab] = useState<'cards' | 'review_ot' | 'table' | 'calendar'>('cards');
@@ -692,6 +712,15 @@ export const AttendanceList: React.FC<AttendanceListProps> = ({ onBackToInsights
               <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.875rem' }}>
                 <thead>
                   <tr style={{ backgroundColor: '#F8FAFC', borderBottom: '2px solid #E2E8F0', textAlign: 'left', color: '#475569', fontWeight: 700 }}>
+                    <th style={{ width: '40px', minWidth: '40px', textAlign: 'center', padding: '14px 16px' }}>
+                      <input
+                        type="checkbox"
+                        checked={filteredRecords.length > 0 && filteredRecords.every(r => selectedAttendanceIds.includes(r.id))}
+                        onChange={handleToggleSelectAll}
+                        style={{ accentColor: '#0E7490', cursor: 'pointer', width: '16px', height: '16px' }}
+                        aria-label="Select all attendance records"
+                      />
+                    </th>
                     <th style={{ padding: '14px 16px' }}>Employee</th>
                     <th style={{ padding: '14px 16px' }}>Date</th>
                     <th style={{ padding: '14px 16px' }}>Shift</th>
@@ -704,31 +733,62 @@ export const AttendanceList: React.FC<AttendanceListProps> = ({ onBackToInsights
                   </tr>
                 </thead>
                 <tbody>
-                  {filteredRecords.map(rec => (
-                    <tr key={rec.id} style={{ borderBottom: '1px solid #F1F5F9' }}>
-                      <td style={{ padding: '12px 16px', fontWeight: 700, color: '#0F172A' }}>{rec.employeeName}</td>
-                      <td style={{ padding: '12px 16px', whiteSpace: 'nowrap' }}>{formatDateDDMMYYYY(rec.date)}</td>
-                      <td style={{ padding: '12px 16px' }}>{rec.shiftName || 'General (09:00-18:00)'}</td>
-                      <td style={{ padding: '12px 16px', fontWeight: 700, color: rec.checkIn ? '#16A34A' : '#DC2626' }}>{rec.checkIn || 'Missing'}</td>
-                      <td style={{ padding: '12px 16px', fontWeight: 700, color: rec.checkOut ? '#16A34A' : '#DC2626' }}>{rec.checkOut || 'Missing'}</td>
-                      <td style={{ padding: '12px 16px', fontWeight: 700 }}>{rec.workingHours || 0} hrs</td>
-                      <td style={{ padding: '12px 16px' }}>{rec.otHours ? `+${rec.otHours}h` : '-'}</td>
-                      <td style={{ padding: '12px 16px' }}>
-                        <span style={{ fontSize: '0.75rem', fontWeight: 800, padding: '4px 10px', borderRadius: '9999px', backgroundColor: '#DCFCE7', color: '#15803D' }}>
-                          {rec.status}
-                        </span>
-                      </td>
-                      <td style={{ padding: '12px 16px', textAlign: 'right' }}>
-                        <button onClick={() => setCorrectionTargetRecord(rec)} className="btn btn-primary btn-sm" style={{ padding: '4px 10px', fontSize: '0.75rem', backgroundColor: '#2563EB' }}>
-                          Edit
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
+                  {filteredRecords.map(rec => {
+                    const isSelected = selectedAttendanceIds.includes(rec.id);
+
+                    return (
+                      <tr 
+                        key={rec.id} 
+                        style={{ 
+                          borderBottom: '1px solid #F1F5F9',
+                          backgroundColor: isSelected ? '#ECFEFF' : undefined,
+                          borderLeft: isSelected ? '4px solid #0E7490' : undefined,
+                          transition: 'background-color 0.15s ease'
+                        }}
+                      >
+                        <td style={{ textAlign: 'center', verticalAlign: 'middle', padding: '12px 16px', width: '40px' }} onClick={e => e.stopPropagation()}>
+                          <input
+                            type="checkbox"
+                            checked={isSelected}
+                            onChange={() => handleToggleAttendance(rec.id)}
+                            style={{ accentColor: '#0E7490', cursor: 'pointer', width: '16px', height: '16px' }}
+                            aria-label={`Select attendance for ${rec.employeeName}`}
+                          />
+                        </td>
+                        <td style={{ padding: '12px 16px', fontWeight: 700, color: '#0F172A' }}>{rec.employeeName}</td>
+                        <td style={{ padding: '12px 16px', whiteSpace: 'nowrap' }}>{formatDateDDMMYYYY(rec.date)}</td>
+                        <td style={{ padding: '12px 16px' }}>{rec.shiftName || shifts[0]?.shiftName || 'Shift 1 (09:00 AM - 06:00 PM)'}</td>
+                        <td style={{ padding: '12px 16px', fontWeight: 700, color: rec.checkIn ? '#16A34A' : '#DC2626' }}>{rec.checkIn || 'Missing'}</td>
+                        <td style={{ padding: '12px 16px', fontWeight: 700, color: rec.checkOut ? '#16A34A' : '#DC2626' }}>{rec.checkOut || 'Missing'}</td>
+                        <td style={{ padding: '12px 16px', fontWeight: 700 }}>{rec.workingHours || 0} hrs</td>
+                        <td style={{ padding: '12px 16px' }}>{rec.otHours ? `+${rec.otHours}h` : '-'}</td>
+                        <td style={{ padding: '12px 16px' }}>
+                          <span style={{ fontSize: '0.75rem', fontWeight: 800, padding: '4px 10px', borderRadius: '9999px', backgroundColor: '#DCFCE7', color: '#15803D' }}>
+                            {rec.status}
+                          </span>
+                        </td>
+                        <td style={{ padding: '12px 16px', textAlign: 'right' }}>
+                          <button onClick={() => setCorrectionTargetRecord(rec)} className="btn btn-primary btn-sm" style={{ padding: '4px 10px', fontSize: '0.75rem', backgroundColor: '#2563EB' }}>
+                            Edit
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
           </div>
+
+          {/* Floating Action Bar per AGENTS.md */}
+          <StandardFloatingActionBar
+            selectedCount={selectedAttendanceIds.length}
+            onClearSelection={() => setSelectedAttendanceIds([])}
+            onEdit={selectedAttendanceIds.length === 1 ? () => {
+              const rec = filteredRecords.find(r => r.id === selectedAttendanceIds[0]);
+              if (rec) setCorrectionTargetRecord(rec);
+            } : undefined}
+          />
         </div>
       )}
 

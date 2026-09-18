@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useHRMS } from '../../context/HRMSContext';
 import { AttendanceRecord } from '../../types/hrms';
+import { formatDateDDMMYYYY } from '../../utils/dateUtils';
 import { 
   X, 
   Clock, 
@@ -29,7 +30,7 @@ export const AttendanceCorrectionModal: React.FC<AttendanceCorrectionModalProps>
   onClose,
   onSuccess
 }) => {
-  const { currentUser, correctAttendanceRecord, leavePolicies } = useHRMS();
+  const { currentUser, correctAttendanceRecord, leavePolicies, shifts } = useHRMS();
 
   if (!record) return null;
 
@@ -305,7 +306,7 @@ export const AttendanceCorrectionModal: React.FC<AttendanceCorrectionModalProps>
                     {record.department}
                   </div>
                   <div style={{ fontSize: '0.75rem', color: '#64748B' }}>
-                    Shift: {record.shiftName || 'General Shift (09:00 AM - 06:00 PM)'}
+                    Shift: {record.shiftName || shifts[0]?.shiftName || 'Shift 1 (09:00 AM - 06:00 PM)'}
                   </div>
                 </div>
 
@@ -314,7 +315,7 @@ export const AttendanceCorrectionModal: React.FC<AttendanceCorrectionModalProps>
                     Date & Current Status
                   </div>
                   <div style={{ fontSize: '0.9rem', fontWeight: 700, color: '#1E293B', marginTop: '2px' }}>
-                    {record.date}
+                    {formatDateDDMMYYYY(record.date)}
                   </div>
                   <span style={{
                     display: 'inline-block',
@@ -895,7 +896,7 @@ export const AttendanceCorrectionModal: React.FC<AttendanceCorrectionModalProps>
             </div>
 
             <p style={{ fontSize: '0.9rem', color: '#475569', lineHeight: 1.5, marginBottom: '20px' }}>
-              Are you sure you want to update this attendance record for <strong>{record.employeeName}</strong> on <strong>{record.date}</strong> to <strong>{selectedStatus}</strong>?
+              Are you sure you want to update this attendance record for <strong>{record.employeeName}</strong> on <strong>{formatDateDDMMYYYY(record.date)}</strong> to <strong>{selectedStatus}</strong>?
             </p>
 
             <div style={{

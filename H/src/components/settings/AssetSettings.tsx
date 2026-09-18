@@ -33,7 +33,7 @@ export const AssetSettings: React.FC = () => {
     { status: 'Available in Store', color: '#166534', bg: '#DCFCE7', desc: 'In central inventory ready for employee allocation' },
     { status: 'Assigned to Employee', color: '#0E7490', bg: '#ECFEFF', desc: 'Currently deployed with active custodian staff' },
     { status: 'Under Maintenance', color: '#854D0E', bg: '#FEF9C3', desc: 'Sent for factory calibration or workshop repair' },
-    { status: 'Scrapped / Retired', color: '#991B1B', bg: '#FEE2E2', desc: 'Decommissioned following end-of-life inspection' },
+    { status: 'Scrapped', color: '#991B1B', bg: '#FEE2E2', desc: 'Decommissioned following end-of-life inspection' },
     { status: 'Lost / Damaged', color: '#7F1D1D', bg: '#FEE2E2', desc: 'Reported missing or damaged during transit' }
   ]);
 
@@ -147,7 +147,7 @@ export const AssetSettings: React.FC = () => {
       {activeTab === 'statuses' && (
         <div style={{ backgroundColor: '#ffffff', borderRadius: '16px', border: '1px solid #E7ECF3', padding: '24px' }}>
           <h2 style={{ fontSize: '1.2rem', fontWeight: 800, color: '#1E293B', margin: '0 0 6px' }}>Asset Operational Statuses</h2>
-          <p style={{ fontSize: '0.85rem', color: '#64748B', margin: '0 0 20px' }}>Lifecycle states governing asset availability, warranty claim, and retirement</p>
+          <p style={{ fontSize: '0.85rem', color: '#64748B', margin: '0 0 20px' }}>Lifecycle states governing asset availability, warranty claim, and decommissioning</p>
 
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '16px' }}>
             {statuses.map(st => (

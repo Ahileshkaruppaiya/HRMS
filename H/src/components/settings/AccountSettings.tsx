@@ -84,7 +84,7 @@ const initialAccountData = {
   departments: [
     { id: 'dp1', name: 'Civil & Structural Engineering', head: 'Er. R. Sundararajan', staffCount: 42, active: true },
     { id: 'dp2', name: 'Plant & Site Operations', head: 'K. Rajendran', staffCount: 68, active: true },
-    { id: 'dp3', name: 'Human Resources & Administration', head: 'Ananya Sharma', staffCount: 12, active: true },
+    { id: 'dp3', name: 'Human Resources & Administration', head: 'Pavithra', staffCount: 12, active: true },
     { id: 'dp4', name: 'Finance, Accounts & Procurement', head: 'M. Senthilkumar', staffCount: 16, active: true }
   ],
 

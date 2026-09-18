@@ -37,7 +37,7 @@ const formatAttendanceTime = (ts: string) => {
 };
 
 export const FaceAttendance: React.FC = () => {
-  const { employees, markAttendance, addFaceLog, faceLogs, attendanceRecords, geofenceConfig, updateGeofenceConfig, currentUser, setActiveModule } = useHRMS();
+  const { employees, markAttendance, addFaceLog, faceLogs, attendanceRecords, geofenceConfig, updateGeofenceConfig, currentUser, setActiveModule, getTodayFieldAssignment } = useHRMS();
   const [selectedEmpId, setSelectedEmpId] = useState<string>(() => currentUser.employeeId || employees[0]?.employeeId || 'EMP-001');
   const [isCameraActive, setIsCameraActive] = useState<boolean>(false);
   const [isScanning, setIsScanning] = useState<boolean>(false);
@@ -51,6 +51,8 @@ export const FaceAttendance: React.FC = () => {
 
   const isCheckedIn = Boolean(todayAttendance?.checkIn);
   const isCheckedOut = Boolean(todayAttendance?.checkOut);
+
+  const isCEO = currentUser.role === 'CEO' || currentUser.designation === 'CEO' || currentUser.employeeId === 'EMP-000';
 
   // Auto-switch punchType to Check-Out once checked in
   useEffect(() => {
@@ -214,10 +216,33 @@ export const FaceAttendance: React.FC = () => {
     const empName = emp ? `${emp.firstName} ${emp.lastName}` : 'Employee';
 
     // GEOFENCE LOCATION ENFORCEMENT CHECK
-    if (geofenceConfig.enabled && distance > geofenceConfig.radiusMeters) {
+    // Check if employee has an approved Field Assignment today
+    const todayFieldDuty = getTodayFieldAssignment ? getTodayFieldAssignment(selectedEmpId) : undefined;
+    let isGeofenceBlocked = false;
+    let blockReason = '';
+
+    if (todayFieldDuty && todayFieldDuty.status !== 'Cancelled') {
+      // Field Duty active: enforce site geofence or allow flexible check-in
+      if (todayFieldDuty.attendanceType === 'Site Geofence' && todayFieldDuty.siteLat && todayFieldDuty.siteLng) {
+        const distToSite = calculateDistanceMeters(userLat, userLng, todayFieldDuty.siteLat, todayFieldDuty.siteLng);
+        if (distToSite > todayFieldDuty.allowedRadiusMeters) {
+          isGeofenceBlocked = true;
+          blockReason = `🚨 Field Attendance BLOCKED: You are outside the assigned site location! (${Math.round(distToSite)}m away from ${todayFieldDuty.customerSiteName}, allowed radius is ${todayFieldDuty.allowedRadiusMeters}m).`;
+        }
+      }
+      // If Flexible Field Check-in: allowed from field location as proof!
+    } else {
+      // Normal Office Duty: Continue existing office geofence attendance
+      if (geofenceConfig.enabled && distance > geofenceConfig.radiusMeters) {
+        isGeofenceBlocked = true;
+        blockReason = `🚨 Attendance BLOCKED: Out of Geofence Boundary! ${empName} is ${distance}m away from ${geofenceConfig.officeName}. Attendance is strictly restricted to within ${geofenceConfig.radiusMeters}m.`;
+      }
+    }
+
+    if (isGeofenceBlocked) {
       setScanResult({
         status: 'error',
-        message: `🚨 Attendance BLOCKED: Out of Geofence Boundary! ${empName} is ${distance}m away from ${geofenceConfig.officeName}. Attendance is strictly restricted to within ${geofenceConfig.radiusMeters}m.`
+        message: blockReason
       });
       setIsScanning(false);
       return;
@@ -404,7 +429,59 @@ export const FaceAttendance: React.FC = () => {
     setShowGpsModal(false);
   };
 
-  const todayLogs = faceLogs.filter(log => log.timestamp.startsWith(todayStr));
+  const isEmployee = currentUser.role === 'Employee' || currentUser.role === 'Assignee';
+
+  // Strict Scoping: Employee role strictly sees only their own punch & face scan activity
+  const isLogForCurrentUser = (log: any): boolean => {
+    const userEmpId = (currentUser.employeeId || currentUser.id || '').trim().toLowerCase();
+    const userName = (currentUser.name || '').trim().toLowerCase();
+    const logEmpId = (log.employeeId || '').trim().toLowerCase();
+    const logEmpName = (log.employeeName || '').trim().toLowerCase();
+
+    // Direct Employee ID match
+    if (userEmpId && logEmpId && userEmpId === logEmpId) return true;
+
+    // Direct Name match
+    if (userName && logEmpName) {
+      if (logEmpName === userName) return true;
+      if (logEmpName.includes(userName) || userName.includes(logEmpName)) return true;
+    }
+
+    // Demo fallback for generic EMP-USER / Staff Employee / Floor Employee -> defaults to EMP-008 (Murugan)
+    if ((userEmpId === 'emp-user' || userName.includes('staff') || userName.includes('floor')) && (logEmpId === 'emp-008' || logEmpName.includes('murugan'))) {
+      return true;
+    }
+
+    return false;
+  };
+
+  const allTodayLogs = faceLogs.filter(log => log.timestamp.startsWith(todayStr));
+  const todayLogs = isEmployee 
+    ? allTodayLogs.filter(isLogForCurrentUser)
+    : allTodayLogs;
+
+  if (isCEO) {
+    return (
+      <div style={{ maxWidth: '640px', margin: '40px auto', padding: '32px', backgroundColor: '#fff', borderRadius: '16px', border: '1px solid #E7ECF3', textAlign: 'center', boxShadow: '0 4px 12px rgba(0,0,0,0.04)' }}>
+        <div style={{ width: '64px', height: '64px', borderRadius: '50%', backgroundColor: '#ECFEFF', color: '#0E7490', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 16px' }}>
+          <ScanFace size={32} />
+        </div>
+        <h2 style={{ fontSize: '1.25rem', fontWeight: 800, color: '#0B1A2D', marginBottom: '8px' }}>
+          Attendance Not Required
+        </h2>
+        <p style={{ color: '#64748B', fontSize: '0.88rem', lineHeight: 1.5, marginBottom: '24px' }}>
+          As CEO, attendance tracking and live face scanning are exempt for executive leadership.
+        </p>
+        <button 
+          className="btn btn-primary" 
+          onClick={() => setActiveModule('dashboard')}
+          style={{ padding: '9px 20px', borderRadius: '10px', fontWeight: 700 }}
+        >
+          Go to Dashboard
+        </button>
+      </div>
+    );
+  }
 
   return (
     <div>
@@ -723,7 +800,7 @@ export const FaceAttendance: React.FC = () => {
           {/* Header Strip */}
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '20px' }}>
             <h2 style={{ fontSize: '1.15rem', fontWeight: 800, color: '#0f172a', margin: 0 }}>
-              Today's Activity
+              {isEmployee ? "My Today's Activity" : "Today's Activity"}
             </h2>
             <span style={{
               backgroundColor: '#ecfeff',
@@ -734,7 +811,7 @@ export const FaceAttendance: React.FC = () => {
               fontWeight: 800,
               letterSpacing: '0.04em'
             }}>
-              {todayLogs.length} RECORDS
+              {todayLogs.length} {todayLogs.length === 1 ? 'RECORD' : 'RECORDS'}
             </span>
           </div>
 
@@ -759,7 +836,7 @@ export const FaceAttendance: React.FC = () => {
                 No activity yet
               </div>
               <div style={{ fontSize: '0.82rem', color: '#94a3b8' }}>
-                Scans will appear here
+                {isEmployee ? 'Your scans today will appear here' : 'Scans will appear here'}
               </div>
             </div>
           ) : (

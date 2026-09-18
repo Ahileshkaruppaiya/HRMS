@@ -1,41 +1,70 @@
 import express from 'express';
 import cors from 'cors';
+import helmet from 'helmet';
+import compression from 'compression';
 import { env } from './config/env.js';
 import { apiRouter } from './routes/index.js';
 import { healthRouter } from './routes/healthRoutes.js';
 import { errorHandler } from './middleware/errorHandler.js';
+import { apiRateLimiter } from './middleware/rateLimiter.js';
 
 export const createApp = () => {
   const app = express();
 
-  // CORS Configuration
+  // 1. Security Headers via Helmet
   app.use(
-    cors({
-      origin: (origin, callback) => {
-        // Allow requests with no origin (like mobile apps, curl, postman)
-        if (!origin) return callback(null, true);
-        if (env.corsOriginsList.includes('*') || env.corsOriginsList.includes(origin)) {
-          return callback(null, true);
-        }
-        return callback(null, true); // Permissive in dev
-      },
-      credentials: true,
-      methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-      allowedHeaders: ['Content-Type', 'Authorization', 'x-user-role', 'x-employee-id'],
+    helmet({
+      crossOriginResourcePolicy: { policy: 'cross-origin' },
+      hidePoweredBy: true,
+      contentSecurityPolicy: false, // APIs return JSON; CSP disabled to prevent false positives on data fetches
     })
   );
 
-  // Body Parsing
-  app.use(express.json());
-  app.use(express.urlencoded({ extended: true }));
+  // 2. High-throughput payload compression
+  app.use(compression());
 
-  // Root health endpoint
+  // 3. CORS Configuration
+  app.use(
+    cors({
+      origin: (origin, callback) => {
+        // Allow non-browser requests (mobile apps, curl, server-to-server)
+        if (!origin) return callback(null, true);
+        
+        // In development / test: allow localhost and configured origins
+        if (
+          env.NODE_ENV !== 'production' ||
+          env.corsOriginsList.includes('*') ||
+          env.corsOriginsList.includes(origin)
+        ) {
+          return callback(null, true);
+        }
+        
+        return callback(new Error(`Origin ${origin} is not allowed by CORS policy`));
+      },
+      credentials: true,
+      methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+      allowedHeaders: [
+        'Content-Type',
+        'Authorization',
+        'x-user-role',
+        'x-employee-id',
+        'x-dev-mock-auth',
+        'x-internal-benchmark',
+      ],
+    })
+  );
+
+  // 4. Request Body Parsing with size limits
+  app.use(express.json({ limit: '1mb' }));
+  app.use(express.urlencoded({ extended: true, limit: '1mb' }));
+
+  // 5. Root health check endpoint (unlimited rate)
   app.use(healthRouter);
 
-  // API v1 prefix
-  app.use('/api/v1', apiRouter);
+  // 6. General API routes with high-throughput rate limiter
+  app.use('/api/v1', apiRateLimiter, apiRouter);
 
-  // 404 handler
+  // 7. 404 Not Found handler
   app.use((_req, res) => {
     res.status(404).json({
       success: false,
@@ -47,7 +76,7 @@ export const createApp = () => {
     });
   });
 
-  // Global Error Handler
+  // 8. Global Error Handler
   app.use(errorHandler);
 
   return app;

@@ -7,7 +7,8 @@ export type NewSettingsSection =
   | 'leave_management'
   | 'payroll_settings'
   | 'rewards_recognition'
-  | 'advance_loan_policy';
+  | 'advance_loan_policy'
+  | 'integrations';
 
 // ==========================================
 // 1. COMPANY DETAILS
@@ -185,6 +186,7 @@ export interface MasterLeavePolicy {
   applicableEmployees: 'ALL' | string[];
   applicableDepartments: 'ALL' | string[];
   applicableBranches: 'ALL' | string[];
+  applicableEmploymentType?: 'ALL' | 'Confirmed' | 'Provisional';
   effectiveDate: string;
   status: 'Active' | 'Inactive' | 'Archived';
   version: number;
@@ -422,10 +424,10 @@ export interface LoanPolicy {
 // ==========================================
 export interface PolicyAuditLog {
   id: string;
-  policyCategory: 'Company Details' | 'Attendance & Time' | 'Leave Management' | 'Payroll Settings' | 'Rewards & Recognition' | 'Advance Salary / Loan Policy';
+  policyCategory: string; // e.g. 'Attendance', 'Leave Management', 'Payroll', 'Rewards'
   policyId: string;
   policyName: string;
-  action: 'CREATE' | 'EDIT' | 'ACTIVATE' | 'DEACTIVATE' | 'ARCHIVE';
+  action: 'CREATE' | 'EDIT' | 'ACTIVATE' | 'DEACTIVATE' | 'ARCHIVE' | 'DELETE';
   performedBy: string;
   performedByRole: string;
   timestamp: string;

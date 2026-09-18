@@ -39,7 +39,8 @@ import {
   Minimize2
 } from 'lucide-react';
 import { toNum } from '../../utils/numbers';
-import { downloadElementAsPDF } from '../../utils/exportUtils';
+import { downloadElementAsPDF, downloadCSV, downloadExcel, downloadPDF } from '../../utils/exportUtils';
+import { ExportDropdown } from '../common/ExportDropdown';
 import { StandardTablePagination } from '../common/StandardTablePagination';
 
 export const AdvanceSalaryManagement: React.FC = () => {
@@ -61,18 +62,19 @@ export const AdvanceSalaryManagement: React.FC = () => {
   const isViewingAsEmployee = isEmployeeRole;
 
   // Target Employee for Employee View
-  const targetEmployeeId = currentUser.employeeId || 'EMP-003';
-  const targetEmployee = employees.find(e => e.employeeId === targetEmployeeId) || employees[0];
+  const targetEmployeeId = currentUser.employeeId || employees[0]?.employeeId || '';
+  const targetEmployee = employees.find(e => e.employeeId === targetEmployeeId || e.email === currentUser.email) || employees[0];
 
   // Employee Self-Service Eligibility
   const employeeEligibility = useMemo(() => {
-    return calculateEmployeeLoanEligibility(targetEmployeeId);
-  }, [targetEmployeeId, calculateEmployeeLoanEligibility, activeLoanPolicy, loanRecords]);
+    return calculateEmployeeLoanEligibility(targetEmployee?.employeeId || targetEmployeeId);
+  }, [targetEmployee, targetEmployeeId, calculateEmployeeLoanEligibility, activeLoanPolicy, loanRecords]);
 
   // Employee's own loans
   const myLoans = useMemo(() => {
-    return loanRecords.filter(r => r.employeeId === targetEmployeeId);
-  }, [loanRecords, targetEmployeeId]);
+    const validId = targetEmployee?.employeeId || targetEmployeeId;
+    return loanRecords.filter(r => r.employeeId === validId || r.employeeId === targetEmployeeId || (currentUser.email && r.employeeId === currentUser.email));
+  }, [loanRecords, targetEmployeeId, targetEmployee, currentUser.email]);
 
   const myActiveLoans = useMemo(() => {
     return myLoans.filter(r => (r.status === 'Active' || r.status === 'Disbursed') && toNum(r.outstandingBalance) > 0);
@@ -121,12 +123,12 @@ export const AdvanceSalaryManagement: React.FC = () => {
     reasonDetails: string;
     neededByDate: string;
   }>({
-    requestType: 'Employee Loan',
+    requestType: 'Advance Salary',
     requestedAmount: 30000,
     installmentMonths: 6,
-    purpose: 'Personal / Family Urgent Requirement',
+    purpose: 'Emergency Medical & Personal Expense',
     reasonDetails: '',
-    neededByDate: '2026-09-15'
+    neededByDate: new Date().toISOString().split('T')[0]
   });
 
   // Review Form State
@@ -238,31 +240,52 @@ export const AdvanceSalaryManagement: React.FC = () => {
   // Display all filtered records directly
   const paginatedRecords = filteredRecords;
 
-  // Export CSV Handler
+  // Export Handlers (Excel, PDF, CSV)
+  const getAdvanceExportData = () => {
+    const columns = [
+      { key: 'id', label: 'Ref ID' },
+      { key: 'employeeId', label: 'Employee ID' },
+      { key: 'employeeName', label: 'Employee Name' },
+      { key: 'department', label: 'Department' },
+      { key: 'requestType', label: 'Type' },
+      { key: 'requestedAmount', label: 'Requested (₹)' },
+      { key: 'approvedAmount', label: 'Approved (₹)' },
+      { key: 'approvedMonths', label: 'Tenure (Mos)' },
+      { key: 'monthlyDeduction', label: 'Monthly EMI (₹)' },
+      { key: 'outstandingBalance', label: 'Outstanding (₹)' },
+      { key: 'status', label: 'Status' },
+      { key: 'requestedDate', label: 'Requested Date' }
+    ];
+    const data = filteredRecords.map(r => ({
+      id: r.id,
+      employeeId: r.employeeId,
+      employeeName: r.employeeName,
+      department: r.department,
+      requestType: r.requestType,
+      requestedAmount: r.requestedAmount,
+      approvedAmount: r.approvedAmount || 0,
+      approvedMonths: r.approvedMonths || r.installmentMonths,
+      monthlyDeduction: r.monthlyDeduction,
+      outstandingBalance: r.outstandingBalance,
+      status: r.status,
+      requestedDate: r.requestedDate
+    }));
+    return { columns, data };
+  };
+
   const handleExportCSV = () => {
-    const headers = ['Ref ID', 'Employee ID', 'Employee Name', 'Department', 'Type', 'Requested (INR)', 'Approved (INR)', 'Tenure (Mos)', 'Monthly EMI (INR)', 'Outstanding (INR)', 'Status', 'Requested Date'];
-    const rows = filteredRecords.map(r => [
-      r.id,
-      r.employeeId,
-      `"${r.employeeName}"`,
-      `"${r.department}"`,
-      `"${r.requestType}"`,
-      r.requestedAmount,
-      r.approvedAmount || 0,
-      r.approvedMonths || r.installmentMonths,
-      r.monthlyDeduction,
-      r.outstandingBalance,
-      r.status,
-      r.requestedDate
-    ]);
-    const csvContent = 'data:text/csv;charset=utf-8,' + [headers.join(','), ...rows.map(e => e.join(','))].join('\n');
-    const encodedUri = encodeURI(csvContent);
-    const link = document.createElement('a');
-    link.setAttribute('href', encodedUri);
-    link.setAttribute('download', `Loan_Advance_Records_${new Date().toISOString().slice(0, 10)}.csv`);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+    const { columns, data } = getAdvanceExportData();
+    downloadCSV(data, `Loan_Advance_Records_${new Date().toISOString().slice(0, 10)}`, columns);
+  };
+
+  const handleExportExcel = () => {
+    const { columns, data } = getAdvanceExportData();
+    downloadExcel(data, `Loan_Advance_Records_${new Date().toISOString().slice(0, 10)}`, columns);
+  };
+
+  const handleExportPDF = () => {
+    const { columns, data } = getAdvanceExportData();
+    downloadPDF(data, 'Advance Salary Register', `Advance_Salary_Records_${new Date().toISOString().slice(0, 10)}`, columns);
   };
 
   const handleSelectAll = (checked: boolean) => {
@@ -281,16 +304,17 @@ export const AdvanceSalaryManagement: React.FC = () => {
 
   // Open Request Modal
   const openRequestModal = () => {
-    const targetEmpId = isViewingAsEmployee ? targetEmployeeId : (requestModalEmployeeId || targetEmployeeId);
-    const targetEmp = employees.find(e => e.employeeId === targetEmpId) || targetEmployee;
-    const elig = calculateEmployeeLoanEligibility(targetEmp.employeeId);
+    const targetEmpId = isViewingAsEmployee ? (targetEmployee?.employeeId || targetEmployeeId) : (requestModalEmployeeId || employees.find(e => e.employeeId !== currentUser.employeeId)?.employeeId || targetEmployeeId);
+    const targetEmp = employees.find(e => e.employeeId === targetEmpId) || targetEmployee || employees[0];
+    const elig = calculateEmployeeLoanEligibility(targetEmp?.employeeId || targetEmpId);
+    const maxAmt = Math.max(elig.maxEligibleAmount || 50000, 30000);
     setRequestFormData({
       requestType: 'Employee Loan',
-      requestedAmount: Math.min(30000, elig.maxEligibleAmount || 30000),
+      requestedAmount: Math.min(30000, maxAmt),
       installmentMonths: 6,
       purpose: 'Emergency Medical & Personal Expense',
       reasonDetails: '',
-      neededByDate: '2026-09-15'
+      neededByDate: new Date(Date.now() + 5 * 86400000).toISOString().split('T')[0]
     });
     setIsRequestModalOpen(true);
   };
@@ -498,66 +522,54 @@ export const AdvanceSalaryManagement: React.FC = () => {
       )}
 
       {/* Page Header */}
-      <div className="page-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '16px' }}>
-        <div className="page-title-group">
+      <div className="page-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '24px', marginBottom: '24px' }}>
+        <div className="page-title-group" style={{ flex: '1 1 auto', minWidth: 0 }}>
           <h1 style={{ fontSize: '1.35rem', fontWeight: 800, color: '#0F172A', letterSpacing: '-0.02em', margin: 0 }}>
-            {isViewingAsEmployee ? 'My Advance Salary / Loan' : 'Advance Salary & Employee Loan Management'}
+            {isViewingAsEmployee ? 'My Advance Salary' : 'Advance Salary Management'}
           </h1>
-          <p className="page-subtitle" style={{ fontSize: '0.85rem', color: '#64748B', margin: '4px 0 0' }}>
+          <p className="page-subtitle" style={{ fontSize: '0.85rem', color: '#64748B', margin: '4px 0 0', lineHeight: 1.45 }}>
             {isViewingAsEmployee 
-              ? 'Check personal borrowing limits, submit requests, view ongoing EMI deductions, and track remaining loan balances.'
+              ? 'Check personal advance salary limits, submit requests, view ongoing EMI deductions, and track remaining advance balances.'
               : 'End-to-end administration for employee advance salaries, eligibility evaluations, multi-stage approvals, disbursements, and automated payroll recoveries.'}
           </p>
         </div>
 
-        <div className="header-actions" style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-          {/* Export Report Button */}
+        <div className="header-actions" style={{ display: 'flex', alignItems: 'center', gap: '10px', flexShrink: 0, marginTop: '2px' }}>
+          {/* Export Report Dropdown (Excel, PDF, CSV) */}
           {!isViewingAsEmployee && (
+            <ExportDropdown 
+              onExportExcel={handleExportExcel}
+              onExportPDF={handleExportPDF}
+              onExportCSV={handleExportCSV}
+            />
+          )}
+
+          {/* Quick Apply / Request Button - Visible ONLY for Employees */}
+          {isViewingAsEmployee && (
             <button 
               type="button" 
-              className="btn btn-secondary"
-              onClick={handleExportCSV}
+              className="btn btn-primary"
+              onClick={openRequestModal}
+              title="Apply for Advance Salary"
               style={{
                 display: 'flex',
                 alignItems: 'center',
                 gap: '8px',
                 borderRadius: '12px',
-                padding: '9px 16px',
-                fontWeight: 600,
-                fontSize: '0.84rem'
+                padding: '9px 18px',
+                fontWeight: 700,
+                fontSize: '0.84rem',
+                backgroundColor: '#0E7490',
+                borderColor: '#0E7490',
+                cursor: 'pointer',
+                boxShadow: '0 2px 8px rgba(14, 116, 144, 0.2)',
+                transition: 'all 0.15s ease'
               }}
-              title="Export all filtered records to CSV"
             >
-              <Download size={15} />
-              <span>Export CSV</span>
+              <Plus size={16} strokeWidth={2.5} />
+              <span>Request Advance Salary</span>
             </button>
           )}
-
-          {/* Quick Apply / Create Request Button */}
-          <button 
-            type="button" 
-            className="btn btn-primary"
-            onClick={openRequestModal}
-            disabled={isViewingAsEmployee && !employeeEligibility.isEligible}
-            title={isViewingAsEmployee && !employeeEligibility.isEligible ? employeeEligibility.ineligibleReason : 'Apply for Advance Salary or Loan'}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '8px',
-              borderRadius: '12px',
-              padding: '9px 18px',
-              fontWeight: 700,
-              fontSize: '0.84rem',
-              backgroundColor: '#0E7490',
-              borderColor: '#0E7490',
-              opacity: (isViewingAsEmployee && !employeeEligibility.isEligible) ? 0.6 : 1,
-              cursor: (isViewingAsEmployee && !employeeEligibility.isEligible) ? 'not-allowed' : 'pointer',
-              boxShadow: '0 2px 8px rgba(14, 116, 144, 0.2)'
-            }}
-          >
-            <Plus size={16} strokeWidth={2.5} />
-            <span>{isViewingAsEmployee ? 'Request Advance / Loan' : 'New Request'}</span>
-          </button>
         </div>
       </div>
 
@@ -566,29 +578,6 @@ export const AdvanceSalaryManagement: React.FC = () => {
           ======================================================== */}
       {isViewingAsEmployee ? (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
-          {/* Eligibility Banner if Ineligible */}
-          {!employeeEligibility.isEligible && (
-            <div style={{
-              padding: '16px 20px',
-              backgroundColor: '#FEF3C7',
-              border: '1px solid #FDE68A',
-              borderRadius: '14px',
-              display: 'flex',
-              alignItems: 'flex-start',
-              gap: '12px',
-              fontSize: '0.85rem',
-              color: '#92400E'
-            }}>
-              <AlertCircle size={20} style={{ flexShrink: 0, marginTop: '2px' }} />
-              <div>
-                <strong style={{ display: 'block', fontSize: '0.9rem', marginBottom: '4px' }}>
-                  Loan Application Notice
-                </strong>
-                <span>{employeeEligibility.ineligibleReason}</span>
-              </div>
-            </div>
-          )}
-
           {/* Employee KPI Cards */}
           <div className="kpi-grid">
             <div className="kpi-card">
@@ -649,7 +638,7 @@ export const AdvanceSalaryManagement: React.FC = () => {
             <div style={{ padding: '20px 24px', borderBottom: '1px solid var(--color-border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <div>
                 <h3 style={{ fontSize: '1.1rem', fontWeight: 800, margin: 0, color: 'var(--color-text-primary)' }}>
-                  My Advance Salary & Loan Accounts
+                  My Advance Salary Accounts
                 </h3>
                 <p style={{ fontSize: '0.8rem', color: 'var(--color-text-secondary)', margin: '4px 0 0' }}>
                   Complete transparent statement of your requested amounts, approved terms, monthly deductions, and settlement status.
@@ -678,8 +667,8 @@ export const AdvanceSalaryManagement: React.FC = () => {
                     <tr>
                       <td colSpan={10} style={{ textAlign: 'center', padding: '40px', color: 'var(--color-text-secondary)' }}>
                         <Wallet size={36} color="#94A3B8" style={{ margin: '0 auto 12px' }} />
-                        <div style={{ fontWeight: 700, fontSize: '0.95rem' }}>No Advance Salary or Loan Requests Found</div>
-                        <p style={{ fontSize: '0.8rem', margin: '4px 0 0' }}>Click "Request Advance / Loan" above to submit a new application.</p>
+                        <div style={{ fontWeight: 700, fontSize: '0.95rem' }}>No Advance Salary Requests Found</div>
+                        <p style={{ fontSize: '0.8rem', margin: '4px 0 0' }}>Click "Request Advance Salary" above to submit a new application.</p>
                       </td>
                     </tr>
                   ) : (
@@ -1137,15 +1126,26 @@ export const AdvanceSalaryManagement: React.FC = () => {
                           <td>{renderStatusBadge(record.status)}</td>
                           <td style={{ textAlign: 'right' }}>
                             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '6px' }}>
-                              {/* Pending Review Action */}
+                              {/* Pending Review & Accept Action */}
                               {record.status === 'Pending' && (
                                 <button 
                                   type="button" 
                                   className="btn btn-primary btn-sm"
                                   onClick={() => openReviewModal(record)}
-                                  style={{ padding: '5px 12px', fontSize: '0.74rem', borderRadius: '8px', backgroundColor: '#0E7490', borderColor: '#0E7490', fontWeight: 700 }}
+                                  style={{ 
+                                    padding: '5px 12px', 
+                                    fontSize: '0.74rem', 
+                                    borderRadius: '8px', 
+                                    backgroundColor: '#0E7490', 
+                                    borderColor: '#0E7490', 
+                                    fontWeight: 700,
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    gap: '5px'
+                                  }}
+                                  title="Review and Accept Request"
                                 >
-                                  Review
+                                  <Check size={13} strokeWidth={2.5} /> Accept / Review
                                 </button>
                               )}
 
@@ -1224,7 +1224,7 @@ export const AdvanceSalaryManagement: React.FC = () => {
                 }}
                 style={{ background: 'none', border: 'none', color: '#38BDF8', cursor: 'pointer', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '6px' }}
               >
-                ✏️ Review Info
+                Review & Accept
               </button>
               <button 
                 type="button"
@@ -1247,14 +1247,15 @@ export const AdvanceSalaryManagement: React.FC = () => {
         const modalElig = calculateEmployeeLoanEligibility(modalEmp.employeeId);
 
         return (
-          <div className="modal-overlay" style={{ zIndex: 9999 }}>
-            <div className="modal-content" style={{ maxWidth: '640px', borderRadius: '20px' }}>
-              <div className="modal-header">
+          <div className="modal-overlay" style={{ zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' }}>
+            <div className="modal-content" style={{ maxWidth: '640px', width: '100%', borderRadius: '20px', maxHeight: '90vh', display: 'flex', flexDirection: 'column', backgroundColor: '#ffffff', boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)', overflow: 'hidden' }}>
+              {/* Pinned Modal Header */}
+              <div className="modal-header" style={{ padding: '20px 24px', borderBottom: '1px solid #E2E8F0', display: 'flex', alignItems: 'center', justifyContent: 'space-between', backgroundColor: '#ffffff', flexShrink: 0 }}>
                 <div>
                   <h3 style={{ fontSize: '1.2rem', fontWeight: 800, margin: 0, color: 'var(--color-text-primary)' }}>
-                    {isViewingAsEmployee ? 'Request Advance Salary / Loan' : 'Create Employee Advance / Loan Request'}
+                    {isViewingAsEmployee ? 'Request Advance Salary' : 'Create Employee Advance Salary Request'}
                   </h3>
-                  <p style={{ fontSize: '0.75rem', color: 'var(--color-text-secondary)', margin: '2px 0 0' }}>
+                  <p style={{ fontSize: '0.78rem', color: 'var(--color-text-secondary)', margin: '3px 0 0' }}>
                     {isViewingAsEmployee 
                       ? `Calculated against your monthly salary: ₹${toNum(targetEmployee.basicSalary).toLocaleString('en-IN')}`
                       : `Applying on behalf of ${modalEmp.firstName} ${modalEmp.lastName} (${modalEmp.employeeId})`}
@@ -1263,18 +1264,20 @@ export const AdvanceSalaryManagement: React.FC = () => {
                 <button 
                   type="button" 
                   onClick={() => setIsRequestModalOpen(false)}
-                  style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#64748B' }}
+                  style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#64748B', display: 'flex', alignItems: 'center', justifyContent: 'center', width: '32px', height: '32px', borderRadius: '8px', padding: 0 }}
+                  aria-label="Close modal"
                 >
                   <X size={20} />
                 </button>
               </div>
 
-              <form onSubmit={handleRequestSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '16px', padding: '16px 0' }}>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '12px' }}>
+              {/* Scrollable Modal Body */}
+              <div className="modal-body" style={{ padding: '20px 24px', overflowY: 'auto', flex: '1 1 auto' }}>
+                <form id="advance-salary-request-form" onSubmit={handleRequestSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
                   {/* Employee Selector for Admin */}
                   {!isViewingAsEmployee && (
-                    <div className="form-group" style={{ gridColumn: 'span 2' }}>
-                      <label style={{ fontSize: '0.8rem', fontWeight: 700, color: '#334155', marginBottom: '6px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <div className="form-group" style={{ marginBottom: 0 }}>
+                      <label style={{ fontSize: '0.82rem', fontWeight: 700, color: '#334155', marginBottom: '6px', display: 'flex', alignItems: 'center', gap: '6px' }}>
                         <Building2 size={14} color="#0E7490" />
                         <span>Select Target Employee *</span>
                       </label>
@@ -1291,6 +1294,8 @@ export const AdvanceSalaryManagement: React.FC = () => {
                           }));
                         }}
                         style={{
+                          width: '100%',
+                          height: '42px',
                           padding: '9px 12px',
                           fontSize: '0.85rem',
                           borderRadius: '10px',
@@ -1312,7 +1317,6 @@ export const AdvanceSalaryManagement: React.FC = () => {
                   {/* Ineligibility Alert */}
                   {!modalElig.isEligible && (
                     <div style={{
-                      gridColumn: 'span 2',
                       padding: '12px 16px',
                       backgroundColor: '#FEF3C7',
                       border: '1px solid #FDE68A',
@@ -1331,72 +1335,86 @@ export const AdvanceSalaryManagement: React.FC = () => {
                     </div>
                   )}
 
-                  <div className="form-group">
-                    <label style={{ fontSize: '0.8rem', fontWeight: 700, color: '#334155', marginBottom: '6px', display: 'block' }}>
-                      Request Type *
-                    </label>
-                    <select 
-                      className="form-control"
-                      value={requestFormData.requestType}
-                      onChange={e => setRequestFormData({ ...requestFormData, requestType: e.target.value as any })}
-                    >
-                      <option value="Advance Salary">Advance Salary</option>
-                      <option value="Employee Loan">Employee Loan</option>
-                      <option value="Emergency Loan">Emergency Loan</option>
-                      <option value="Salary Advance">Salary Advance</option>
-                    </select>
+                  {/* Perfectly Balanced Row 1 */}
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '16px' }}>
+                    <div className="form-group" style={{ marginBottom: 0 }}>
+                      <label style={{ fontSize: '0.82rem', fontWeight: 700, color: '#334155', marginBottom: '6px', display: 'block' }}>
+                        Request Type *
+                      </label>
+                      <select 
+                        className="form-control"
+                        value={requestFormData.requestType}
+                        onChange={e => setRequestFormData({ ...requestFormData, requestType: e.target.value as any })}
+                        style={{ height: '42px', borderRadius: '10px', border: '1px solid #CBD5E1', fontSize: '0.85rem' }}
+                      >
+                        <option value="Advance Salary">Advance Salary</option>
+                        <option value="Salary Advance">Salary Advance</option>
+                        <option value="Employee Loan">Employee Loan</option>
+                        <option value="Emergency Loan">Emergency Loan</option>
+                      </select>
+                    </div>
+
+                    <div className="form-group" style={{ marginBottom: 0 }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                        <label style={{ fontSize: '0.82rem', fontWeight: 700, color: '#334155', margin: 0 }}>
+                          Requested Amount (₹) *
+                        </label>
+                        <span style={{ fontSize: '0.72rem', color: '#0E7490', fontWeight: 600 }}>
+                          Max: ₹{(modalElig.maxEligibleAmount || 50000).toLocaleString('en-IN')}
+                        </span>
+                      </div>
+                      <input 
+                        type="number"
+                        min={modalElig.policy?.minLoanAmount || 1000}
+                        max={Math.max(modalElig.maxEligibleAmount || 50000, 10000)}
+                        required
+                        className="form-control"
+                        value={requestFormData.requestedAmount}
+                        onChange={e => setRequestFormData({ ...requestFormData, requestedAmount: Number(e.target.value) })}
+                        style={{ height: '42px', borderRadius: '10px', border: '1px solid #CBD5E1', fontSize: '0.85rem' }}
+                      />
+                    </div>
                   </div>
 
-                  <div className="form-group">
-                    <label style={{ fontSize: '0.8rem', fontWeight: 700, color: '#334155', marginBottom: '6px', display: 'block' }}>
-                      Requested Amount (₹) *
-                    </label>
-                    <input 
-                      type="number"
-                      min={modalElig.policy.minLoanAmount}
-                      max={modalElig.maxEligibleAmount}
-                      required
-                      className="form-control"
-                      value={requestFormData.requestedAmount}
-                      onChange={e => setRequestFormData({ ...requestFormData, requestedAmount: Number(e.target.value) })}
-                    />
-                    <span style={{ fontSize: '0.7rem', color: '#0E7490', fontWeight: 600 }}>
-                      Max eligible: ₹{modalElig.maxEligibleAmount.toLocaleString('en-IN')}
-                    </span>
+                  {/* Perfectly Balanced Row 2 */}
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '16px' }}>
+                    <div className="form-group" style={{ marginBottom: 0 }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                        <label style={{ fontSize: '0.82rem', fontWeight: 700, color: '#334155', margin: 0 }}>
+                          Repayment Period (Months) *
+                        </label>
+                        <span style={{ fontSize: '0.72rem', color: '#64748B' }}>
+                          Allowed: {modalElig.policy.minRepaymentMonths}–{modalElig.policy.maxRepaymentMonths} mos
+                        </span>
+                      </div>
+                      <input 
+                        type="number"
+                        min={modalElig.policy.minRepaymentMonths}
+                        max={modalElig.policy.maxRepaymentMonths}
+                        required
+                        className="form-control"
+                        value={requestFormData.installmentMonths}
+                        onChange={e => setRequestFormData({ ...requestFormData, installmentMonths: Number(e.target.value) })}
+                        style={{ height: '42px', borderRadius: '10px', border: '1px solid #CBD5E1', fontSize: '0.85rem' }}
+                      />
+                    </div>
+
+                    <div className="form-group" style={{ marginBottom: 0 }}>
+                      <label style={{ fontSize: '0.82rem', fontWeight: 700, color: '#334155', marginBottom: '6px', display: 'block' }}>
+                        Funds Needed By Date
+                      </label>
+                      <input 
+                        type="date"
+                        className="form-control"
+                        value={requestFormData.neededByDate}
+                        onChange={e => setRequestFormData({ ...requestFormData, neededByDate: e.target.value })}
+                        style={{ height: '42px', borderRadius: '10px', border: '1px solid #CBD5E1', fontSize: '0.85rem' }}
+                      />
+                    </div>
                   </div>
 
-                  <div className="form-group">
-                    <label style={{ fontSize: '0.8rem', fontWeight: 700, color: '#334155', marginBottom: '6px', display: 'block' }}>
-                      Repayment Period (Months) *
-                    </label>
-                    <input 
-                      type="number"
-                      min={modalElig.policy.minRepaymentMonths}
-                      max={modalElig.policy.maxRepaymentMonths}
-                      required
-                      className="form-control"
-                      value={requestFormData.installmentMonths}
-                      onChange={e => setRequestFormData({ ...requestFormData, installmentMonths: Number(e.target.value) })}
-                    />
-                    <span style={{ fontSize: '0.7rem', color: '#64748B' }}>
-                      Policy allowed: {modalElig.policy.minRepaymentMonths} to {modalElig.policy.maxRepaymentMonths} months
-                    </span>
-                  </div>
-
-                  <div className="form-group">
-                    <label style={{ fontSize: '0.8rem', fontWeight: 700, color: '#334155', marginBottom: '6px', display: 'block' }}>
-                      Funds Needed By Date
-                    </label>
-                    <input 
-                      type="date"
-                      className="form-control"
-                      value={requestFormData.neededByDate}
-                      onChange={e => setRequestFormData({ ...requestFormData, neededByDate: e.target.value })}
-                    />
-                  </div>
-
-                  <div className="form-group" style={{ gridColumn: 'span 2' }}>
-                    <label style={{ fontSize: '0.8rem', fontWeight: 700, color: '#334155', marginBottom: '6px', display: 'block' }}>
+                  <div className="form-group" style={{ marginBottom: 0 }}>
+                    <label style={{ fontSize: '0.82rem', fontWeight: 700, color: '#334155', marginBottom: '6px', display: 'block' }}>
                       Purpose / Reason *
                     </label>
                     <input 
@@ -1406,11 +1424,12 @@ export const AdvanceSalaryManagement: React.FC = () => {
                       className="form-control"
                       value={requestFormData.purpose}
                       onChange={e => setRequestFormData({ ...requestFormData, purpose: e.target.value })}
+                      style={{ height: '42px', borderRadius: '10px', border: '1px solid #CBD5E1', fontSize: '0.85rem' }}
                     />
                   </div>
 
-                  <div className="form-group" style={{ gridColumn: 'span 2' }}>
-                    <label style={{ fontSize: '0.8rem', fontWeight: 700, color: '#334155', marginBottom: '6px', display: 'block' }}>
+                  <div className="form-group" style={{ marginBottom: 0 }}>
+                    <label style={{ fontSize: '0.82rem', fontWeight: 700, color: '#334155', marginBottom: '6px', display: 'block' }}>
                       Additional Details & Notes (Optional)
                     </label>
                     <textarea 
@@ -1419,60 +1438,63 @@ export const AdvanceSalaryManagement: React.FC = () => {
                       className="form-control"
                       value={requestFormData.reasonDetails}
                       onChange={e => setRequestFormData({ ...requestFormData, reasonDetails: e.target.value })}
+                      style={{ borderRadius: '10px', border: '1px solid #CBD5E1', fontSize: '0.85rem', resize: 'vertical' }}
                     />
                   </div>
-                </div>
 
-                {/* Pre-Submission Live Summary Card */}
-                <div style={{
-                  padding: '14px 18px',
-                  backgroundColor: '#ECFEFF',
-                  border: '1px solid #CFFAFE',
-                  borderRadius: '12px',
-                  display: 'grid',
-                  gridTemplateColumns: 'repeat(2, 1fr)',
-                  gap: '10px',
-                  fontSize: '0.8rem'
-                }}>
-                  <div>
-                    <span style={{ color: '#64748B', display: 'block' }}>Applicant Monthly Salary:</span>
-                    <strong style={{ color: '#0F172A' }}>₹{toNum(modalEmp.basicSalary).toLocaleString('en-IN')}</strong>
+                  {/* Pre-Submission Live Summary Card */}
+                  <div style={{
+                    padding: '14px 18px',
+                    backgroundColor: '#ECFEFF',
+                    border: '1px solid #CFFAFE',
+                    borderRadius: '12px',
+                    display: 'grid',
+                    gridTemplateColumns: 'repeat(2, 1fr)',
+                    gap: '12px',
+                    fontSize: '0.82rem',
+                    marginTop: '4px'
+                  }}>
+                    <div>
+                      <span style={{ color: '#64748B', display: 'block', fontSize: '0.75rem' }}>Applicant Monthly Salary:</span>
+                      <strong style={{ color: '#0F172A', fontSize: '0.92rem' }}>₹{toNum(modalEmp.basicSalary).toLocaleString('en-IN')}</strong>
+                    </div>
+                    <div>
+                      <span style={{ color: '#64748B', display: 'block', fontSize: '0.75rem' }}>Maximum Eligible Limit:</span>
+                      <strong style={{ color: '#0E7490', fontSize: '0.92rem' }}>₹{modalElig.maxEligibleAmount.toLocaleString('en-IN')}</strong>
+                    </div>
+                    <div>
+                      <span style={{ color: '#64748B', display: 'block', fontSize: '0.75rem' }}>Requested Amount:</span>
+                      <strong style={{ color: '#0F172A', fontSize: '0.92rem' }}>₹{requestFormData.requestedAmount.toLocaleString('en-IN')}</strong>
+                    </div>
+                    <div>
+                      <span style={{ color: '#64748B', display: 'block', fontSize: '0.75rem' }}>Estimated Monthly EMI:</span>
+                      <strong style={{ color: '#0E7490', fontSize: '1rem', fontWeight: 800 }}>
+                        ₹{Math.round(requestFormData.requestedAmount / (requestFormData.installmentMonths || 1)).toLocaleString('en-IN')} / mo
+                      </strong>
+                    </div>
                   </div>
-                  <div>
-                    <span style={{ color: '#64748B', display: 'block' }}>Maximum Eligible Limit:</span>
-                    <strong style={{ color: '#0E7490' }}>₹{modalElig.maxEligibleAmount.toLocaleString('en-IN')}</strong>
-                  </div>
-                  <div>
-                    <span style={{ color: '#64748B', display: 'block' }}>Requested Amount:</span>
-                    <strong style={{ color: '#0F172A' }}>₹{requestFormData.requestedAmount.toLocaleString('en-IN')}</strong>
-                  </div>
-                  <div>
-                    <span style={{ color: '#64748B', display: 'block' }}>Estimated Monthly EMI:</span>
-                    <strong style={{ color: '#0E7490', fontSize: '0.95rem' }}>
-                      ₹{Math.round(requestFormData.requestedAmount / (requestFormData.installmentMonths || 1)).toLocaleString('en-IN')} / mo
-                    </strong>
-                  </div>
-                </div>
+                </form>
+              </div>
 
-                {/* Action Buttons */}
-                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '8px' }}>
-                  <button 
-                    type="button" 
-                    className="btn btn-secondary"
-                    onClick={() => setIsRequestModalOpen(false)}
-                    style={{ borderRadius: '12px' }}
-                  >
-                    Cancel
-                  </button>
-                  <button 
-                    type="submit" 
-                    className="btn btn-primary"
-                    style={{ borderRadius: '12px', display: 'flex', alignItems: 'center', gap: '6px', backgroundColor: '#0E7490', borderColor: '#0E7490' }}
-                  >
-                    <Send size={15} /> Submit Loan Request
-                  </button>
-                </div>
-              </form>
+              {/* Pinned Modal Footer (Always Visible) */}
+              <div className="modal-footer" style={{ padding: '16px 24px', borderTop: '1px solid #E2E8F0', backgroundColor: '#F8FAFC', display: 'flex', justifyContent: 'flex-end', gap: '12px', flexShrink: 0 }}>
+                <button 
+                  type="button" 
+                  className="btn btn-secondary"
+                  onClick={() => setIsRequestModalOpen(false)}
+                  style={{ borderRadius: '10px', padding: '9px 18px', fontWeight: 600, fontSize: '0.85rem' }}
+                >
+                  Cancel
+                </button>
+                <button 
+                  type="submit" 
+                  form="advance-salary-request-form"
+                  className="btn btn-primary"
+                  style={{ borderRadius: '10px', padding: '9px 20px', fontWeight: 700, fontSize: '0.85rem', display: 'inline-flex', alignItems: 'center', gap: '8px', backgroundColor: '#0E7490', borderColor: '#0E7490' }}
+                >
+                  <Send size={15} /> Submit Advance Salary Request
+                </button>
+              </div>
             </div>
           </div>
         );
@@ -1498,7 +1520,7 @@ export const AdvanceSalaryManagement: React.FC = () => {
             className="modal-content" 
             style={{ 
               width: isReviewFullScreen ? '98vw' : '90vw',
-              maxWidth: isReviewFullScreen ? '1200px' : '720px',
+              maxWidth: isReviewFullScreen ? '1200px' : '780px',
               height: isReviewFullScreen ? '96vh' : 'auto',
               maxHeight: isReviewFullScreen ? '96vh' : '92vh',
               borderRadius: '20px',
@@ -1518,9 +1540,10 @@ export const AdvanceSalaryManagement: React.FC = () => {
               alignItems: 'center', 
               justifyContent: 'space-between',
               flexShrink: 0,
-              background: '#FFFFFF'
+              background: '#FFFFFF',
+              gap: '16px'
             }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '14px', minWidth: 0, flex: 1 }}>
                 <div style={{ 
                   width: '42px', 
                   height: '42px', 
@@ -1534,11 +1557,23 @@ export const AdvanceSalaryManagement: React.FC = () => {
                 }}>
                   <ShieldCheck size={22} color="#0E7490" />
                 </div>
-                <div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                    <h3 style={{ fontSize: '1.2rem', fontWeight: 800, margin: 0, color: '#0F172A' }}>
-                      Review Loan Application: {reviewModalRecord.id}
+                <div style={{ minWidth: 0, flex: 1 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+                    <h3 style={{ fontSize: '1.15rem', fontWeight: 800, margin: 0, color: '#0F172A', whiteSpace: 'nowrap' }}>
+                      Review Advance Request
                     </h3>
+                    <span style={{ 
+                      fontSize: '0.75rem', 
+                      fontWeight: 700, 
+                      padding: '2px 8px', 
+                      borderRadius: '6px',
+                      background: '#F1F5F9',
+                      color: '#0E7490',
+                      border: '1px solid #CFFAFE',
+                      whiteSpace: 'nowrap'
+                    }}>
+                      {reviewModalRecord.id}
+                    </span>
                     <span style={{ 
                       fontSize: '0.72rem', 
                       fontWeight: 700, 
@@ -1546,18 +1581,22 @@ export const AdvanceSalaryManagement: React.FC = () => {
                       borderRadius: '9999px',
                       background: '#FEF3C7',
                       color: '#B45309',
-                      border: '1px solid #FDE68A'
+                      border: '1px solid #FDE68A',
+                      whiteSpace: 'nowrap',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      flexShrink: 0
                     }}>
                       Pending Review
                     </span>
                   </div>
-                  <p style={{ fontSize: '0.78rem', color: '#64748B', margin: '3px 0 0' }}>
+                  <p style={{ fontSize: '0.78rem', color: '#64748B', margin: '3px 0 0', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                     Applicant: <strong style={{ color: '#1E293B' }}>{reviewModalRecord.employeeName}</strong> ({reviewModalRecord.employeeId}) • {reviewModalRecord.department}
                   </p>
                 </div>
               </div>
 
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0 }}>
                 <button 
                   type="button" 
                   onClick={() => setIsReviewFullScreen(!isReviewFullScreen)}
@@ -1677,7 +1716,7 @@ export const AdvanceSalaryManagement: React.FC = () => {
                         transition: 'all 0.15s ease'
                       }}
                     >
-                      <CheckCircle2 size={18} /> Approve / Partial Approve
+                      <CheckCircle2 size={18} /> Accept / Approve Request
                     </button>
                     <button
                       type="button"
@@ -1853,7 +1892,7 @@ export const AdvanceSalaryManagement: React.FC = () => {
                     className={`btn ${reviewFormData.action === 'Approve' ? 'btn-primary' : 'btn-danger'}`}
                     style={{ borderRadius: '12px', padding: '10px 24px', fontWeight: 700 }}
                   >
-                    {reviewFormData.action === 'Approve' ? 'Confirm Approval' : 'Confirm Rejection'}
+                    {reviewFormData.action === 'Approve' ? 'Accept & Approve Request' : 'Confirm Rejection'}
                   </button>
                 </div>
               </div>
@@ -1997,116 +2036,165 @@ export const AdvanceSalaryManagement: React.FC = () => {
           MODAL 4: MANUAL REPAYMENT MODAL
           ======================================================== */}
       {manualRepaymentModalRecord && (
-        <div className="modal-overlay" style={{ zIndex: 9999 }}>
-          <div className="modal-content" style={{ maxWidth: '540px', borderRadius: '20px' }}>
-            <div className="modal-header">
+        <div className="modal-overlay" style={{ zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px', backgroundColor: 'rgba(15, 23, 42, 0.6)', backdropFilter: 'blur(4px)' }}>
+          <div className="modal-content" style={{ maxWidth: '560px', width: '100%', borderRadius: '20px', backgroundColor: '#FFFFFF', boxShadow: '0 25px 50px -12px rgba(15, 23, 42, 0.25)', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+            
+            {/* Modal Header */}
+            <div className="modal-header" style={{ padding: '20px 24px', borderBottom: '1px solid #E2E8F0', display: 'flex', alignItems: 'center', justifyContent: 'space-between', backgroundColor: '#FFFFFF', flexShrink: 0 }}>
               <div>
-                <h3 style={{ fontSize: '1.2rem', fontWeight: 800, margin: 0, color: 'var(--color-text-primary)' }}>
+                <h3 style={{ fontSize: '1.25rem', fontWeight: 800, margin: 0, color: 'var(--color-text-primary)' }}>
                   Record Manual Direct Repayment
                 </h3>
-                <p style={{ fontSize: '0.75rem', color: 'var(--color-text-secondary)', margin: '2px 0 0' }}>
-                  Loan: {manualRepaymentModalRecord.id} • Outstanding: ₹{manualRepaymentModalRecord.outstandingBalance.toLocaleString('en-IN')}
+                <p style={{ fontSize: '0.8rem', color: 'var(--color-text-secondary)', margin: '4px 0 0', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <span>Loan Ref: <strong style={{ color: '#0E7490' }}>{manualRepaymentModalRecord.id}</strong></span>
+                  <span>•</span>
+                  <span>Outstanding: <strong style={{ color: '#0F172A' }}>₹{manualRepaymentModalRecord.outstandingBalance.toLocaleString('en-IN')}</strong></span>
                 </p>
               </div>
               <button 
                 type="button" 
                 onClick={() => setManualRepaymentModalRecord(null)}
-                style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#64748B' }}
+                style={{ 
+                  background: 'transparent', 
+                  border: 'none', 
+                  cursor: 'pointer', 
+                  color: '#64748B', 
+                  width: '32px', 
+                  height: '32px', 
+                  borderRadius: '8px', 
+                  display: 'inline-flex', 
+                  alignItems: 'center', 
+                  justifyContent: 'center',
+                  padding: 0,
+                  transition: 'background-color 0.15s'
+                }}
+                onMouseEnter={e => (e.currentTarget.style.backgroundColor = '#F1F5F9')}
+                onMouseLeave={e => (e.currentTarget.style.backgroundColor = 'transparent')}
+                aria-label="Close modal"
               >
                 <X size={20} />
               </button>
             </div>
 
-            <form onSubmit={handleManualRepaymentSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '14px', padding: '16px 0' }}>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '12px' }}>
-                <div className="form-group">
-                  <label style={{ fontSize: '0.78rem', fontWeight: 700, color: '#334155', marginBottom: '4px', display: 'block' }}>
-                    Payment Amount (₹) *
-                  </label>
-                  <input 
-                    type="number"
-                    max={manualRepaymentModalRecord.outstandingBalance}
-                    required
-                    className="form-control"
-                    value={manualRepaymentFormData.amount}
-                    onChange={e => setManualRepaymentFormData({ ...manualRepaymentFormData, amount: Number(e.target.value) })}
-                  />
+            {/* Modal Body */}
+            <div className="modal-body" style={{ padding: '24px', overflowY: 'auto', flex: '1 1 auto' }}>
+              {/* Informative Summary Badge */}
+              <div style={{ padding: '12px 16px', backgroundColor: '#ECFEFF', borderRadius: '12px', border: '1px solid #CFFAFE', display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '20px' }}>
+                <div>
+                  <span style={{ fontSize: '0.72rem', color: '#0E7490', textTransform: 'uppercase', fontWeight: 700, letterSpacing: '0.5px' }}>Borrower</span>
+                  <div style={{ fontSize: '0.9rem', fontWeight: 700, color: '#0F172A' }}>
+                    {manualRepaymentModalRecord.employeeName} <span style={{ fontSize: '0.78rem', color: '#64748B', fontWeight: 500 }}>({manualRepaymentModalRecord.employeeId})</span>
+                  </div>
                 </div>
-
-                <div className="form-group">
-                  <label style={{ fontSize: '0.78rem', fontWeight: 700, color: '#334155', marginBottom: '4px', display: 'block' }}>
-                    Payment Date *
-                  </label>
-                  <input 
-                    type="date"
-                    required
-                    className="form-control"
-                    value={manualRepaymentFormData.repaymentDate}
-                    onChange={e => setManualRepaymentFormData({ ...manualRepaymentFormData, repaymentDate: e.target.value })}
-                  />
-                </div>
-
-                <div className="form-group">
-                  <label style={{ fontSize: '0.78rem', fontWeight: 700, color: '#334155', marginBottom: '4px', display: 'block' }}>
-                    Payment Mode *
-                  </label>
-                  <select 
-                    className="form-control"
-                    value={manualRepaymentFormData.paymentMode}
-                    onChange={e => setManualRepaymentFormData({ ...manualRepaymentFormData, paymentMode: e.target.value as any })}
-                  >
-                    <option value="Bank Transfer">Bank Transfer (NEFT / IMPS)</option>
-                    <option value="UPI">UPI / GPay / PhonePe</option>
-                    <option value="Cash">Cash Deposit</option>
-                    <option value="Cheque">Bank Cheque</option>
-                    <option value="Other">Other</option>
-                  </select>
-                </div>
-
-                <div className="form-group">
-                  <label style={{ fontSize: '0.78rem', fontWeight: 700, color: '#334155', marginBottom: '4px', display: 'block' }}>
-                    Receipt / Ref Number
-                  </label>
-                  <input 
-                    type="text"
-                    placeholder="e.g. UPI-92182740"
-                    className="form-control"
-                    value={manualRepaymentFormData.referenceNumber}
-                    onChange={e => setManualRepaymentFormData({ ...manualRepaymentFormData, referenceNumber: e.target.value })}
-                  />
-                </div>
-
-                <div className="form-group" style={{ gridColumn: 'span 2' }}>
-                  <label style={{ fontSize: '0.78rem', fontWeight: 700, color: '#334155', marginBottom: '4px', display: 'block' }}>
-                    Notes
-                  </label>
-                  <input 
-                    type="text"
-                    className="form-control"
-                    value={manualRepaymentFormData.notes}
-                    onChange={e => setManualRepaymentFormData({ ...manualRepaymentFormData, notes: e.target.value })}
-                  />
+                <div style={{ textAlign: 'right' }}>
+                  <span style={{ fontSize: '0.72rem', color: '#64748B', textTransform: 'uppercase', fontWeight: 700, letterSpacing: '0.5px' }}>Current Outstanding</span>
+                  <div style={{ fontSize: '1.05rem', fontWeight: 800, color: '#0E7490' }}>
+                    ₹{manualRepaymentModalRecord.outstandingBalance.toLocaleString('en-IN')}
+                  </div>
                 </div>
               </div>
 
-              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '10px' }}>
-                <button 
-                  type="button" 
-                  className="btn btn-secondary"
-                  onClick={() => setManualRepaymentModalRecord(null)}
-                  style={{ borderRadius: '12px' }}
-                >
-                  Cancel
-                </button>
-                <button 
-                  type="submit" 
-                  className="btn btn-primary"
-                  style={{ borderRadius: '12px', backgroundColor: '#0E7490' }}
-                >
-                  Record Payment
-                </button>
-              </div>
-            </form>
+              <form id="manual-repayment-form" onSubmit={handleManualRepaymentSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '16px' }}>
+                  <div className="form-group" style={{ marginBottom: 0 }}>
+                    <label style={{ fontSize: '0.82rem', fontWeight: 700, color: '#334155', marginBottom: '6px', display: 'block' }}>
+                      Payment Amount (₹) <span style={{ color: '#EF4444' }}>*</span>
+                    </label>
+                    <input 
+                      type="number"
+                      min="1"
+                      max={manualRepaymentModalRecord.outstandingBalance}
+                      required
+                      className="form-control"
+                      style={{ height: '42px', borderRadius: '10px', border: '1px solid #CBD5E1', padding: '0 14px', fontSize: '0.9rem' }}
+                      value={manualRepaymentFormData.amount}
+                      onChange={e => setManualRepaymentFormData({ ...manualRepaymentFormData, amount: Number(e.target.value) })}
+                    />
+                  </div>
+
+                  <div className="form-group" style={{ marginBottom: 0 }}>
+                    <label style={{ fontSize: '0.82rem', fontWeight: 700, color: '#334155', marginBottom: '6px', display: 'block' }}>
+                      Payment Date <span style={{ color: '#EF4444' }}>*</span>
+                    </label>
+                    <input 
+                      type="date"
+                      required
+                      className="form-control"
+                      style={{ height: '42px', borderRadius: '10px', border: '1px solid #CBD5E1', padding: '0 14px', fontSize: '0.9rem' }}
+                      value={manualRepaymentFormData.repaymentDate}
+                      onChange={e => setManualRepaymentFormData({ ...manualRepaymentFormData, repaymentDate: e.target.value })}
+                    />
+                  </div>
+
+                  <div className="form-group" style={{ marginBottom: 0 }}>
+                    <label style={{ fontSize: '0.82rem', fontWeight: 700, color: '#334155', marginBottom: '6px', display: 'block' }}>
+                      Payment Mode <span style={{ color: '#EF4444' }}>*</span>
+                    </label>
+                    <select 
+                      className="form-control"
+                      style={{ height: '42px', borderRadius: '10px', border: '1px solid #CBD5E1', padding: '0 14px', fontSize: '0.9rem', backgroundColor: '#FFFFFF' }}
+                      value={manualRepaymentFormData.paymentMode}
+                      onChange={e => setManualRepaymentFormData({ ...manualRepaymentFormData, paymentMode: e.target.value as any })}
+                    >
+                      <option value="Bank Transfer">Bank Transfer (NEFT / IMPS)</option>
+                      <option value="UPI">UPI / GPay / PhonePe</option>
+                      <option value="Cash">Cash Deposit</option>
+                      <option value="Cheque">Bank Cheque</option>
+                      <option value="Other">Other</option>
+                    </select>
+                  </div>
+
+                  <div className="form-group" style={{ marginBottom: 0 }}>
+                    <label style={{ fontSize: '0.82rem', fontWeight: 700, color: '#334155', marginBottom: '6px', display: 'block' }}>
+                      Receipt / Ref Number
+                    </label>
+                    <input 
+                      type="text"
+                      placeholder="e.g. TRX-020973 or UPI-9218274"
+                      className="form-control"
+                      style={{ height: '42px', borderRadius: '10px', border: '1px solid #CBD5E1', padding: '0 14px', fontSize: '0.9rem' }}
+                      value={manualRepaymentFormData.referenceNumber}
+                      onChange={e => setManualRepaymentFormData({ ...manualRepaymentFormData, referenceNumber: e.target.value })}
+                    />
+                  </div>
+
+                  <div className="form-group" style={{ gridColumn: 'span 2', marginBottom: 0 }}>
+                    <label style={{ fontSize: '0.82rem', fontWeight: 700, color: '#334155', marginBottom: '6px', display: 'block' }}>
+                      Notes / Remarks
+                    </label>
+                    <input 
+                      type="text"
+                      placeholder="Direct voluntary repayment received."
+                      className="form-control"
+                      style={{ height: '42px', borderRadius: '10px', border: '1px solid #CBD5E1', padding: '0 14px', fontSize: '0.9rem' }}
+                      value={manualRepaymentFormData.notes}
+                      onChange={e => setManualRepaymentFormData({ ...manualRepaymentFormData, notes: e.target.value })}
+                    />
+                  </div>
+                </div>
+              </form>
+            </div>
+
+            {/* Modal Footer */}
+            <div className="modal-footer" style={{ padding: '16px 24px', borderTop: '1px solid #E2E8F0', backgroundColor: '#F8FAFC', display: 'flex', justifyContent: 'flex-end', gap: '12px', flexShrink: 0 }}>
+              <button 
+                type="button" 
+                className="btn btn-secondary"
+                onClick={() => setManualRepaymentModalRecord(null)}
+                style={{ borderRadius: '10px', padding: '9px 18px', fontWeight: 600, fontSize: '0.85rem' }}
+              >
+                Cancel
+              </button>
+              <button 
+                type="submit" 
+                form="manual-repayment-form"
+                className="btn btn-primary"
+                style={{ borderRadius: '10px', padding: '9px 22px', fontWeight: 700, fontSize: '0.85rem', backgroundColor: '#0E7490', borderColor: '#0E7490' }}
+              >
+                Record Payment
+              </button>
+            </div>
+
           </div>
         </div>
       )}
@@ -2119,14 +2207,14 @@ export const AdvanceSalaryManagement: React.FC = () => {
           const rec = selectedRecordForDetail || scheduleModalRecord!;
           return (
             <div className="modal-overlay" style={{ zIndex: 9999 }}>
-              <div className="modal-content" style={{ maxWidth: '720px', maxHeight: '90vh', overflowY: 'auto', borderRadius: '20px' }}>
-                <div className="modal-header">
+              <div className="modal-content" style={{ maxWidth: '750px', maxHeight: '90vh', overflowY: 'auto', borderRadius: '20px', boxShadow: '0 20px 40px rgba(0,0,0,0.18)' }}>
+                <div className="modal-header" style={{ padding: '20px 24px', borderBottom: '1px solid #E2E8F0' }}>
                   <div>
                     <h3 style={{ fontSize: '1.2rem', fontWeight: 800, margin: 0, color: 'var(--color-text-primary)' }}>
                       Loan Account Dossier: {rec.id}
                     </h3>
-                    <p style={{ fontSize: '0.75rem', color: 'var(--color-text-secondary)', margin: '2px 0 0' }}>
-                      {rec.employeeName} ({rec.employeeId}) • {rec.department}
+                    <p style={{ fontSize: '0.78rem', color: 'var(--color-text-secondary)', margin: '4px 0 0' }}>
+                      <strong style={{ color: '#334155' }}>{rec.employeeName}</strong> ({rec.employeeId}) • {rec.department}
                     </p>
                   </div>
                   <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
@@ -2134,83 +2222,108 @@ export const AdvanceSalaryManagement: React.FC = () => {
                       type="button" 
                       className="btn btn-secondary btn-sm"
                       onClick={() => downloadElementAsPDF('printable-loan-schedule', `Loan_Schedule_${rec.id}`)}
-                      style={{ borderRadius: '8px', display: 'flex', alignItems: 'center', gap: '6px' }}
+                      style={{ borderRadius: '10px', display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '6px 12px', fontWeight: 600 }}
                     >
                       <Download size={13} /> PDF
                     </button>
                     <button 
                       type="button" 
                       onClick={() => { setSelectedRecordForDetail(null); setScheduleModalRecord(null); }}
-                      style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#64748B' }}
+                      style={{ 
+                        background: 'transparent', 
+                        border: 'none', 
+                        cursor: 'pointer', 
+                        color: '#64748B', 
+                        width: '32px', 
+                        height: '32px', 
+                        borderRadius: '8px',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        transition: 'background 0.15s'
+                      }}
+                      onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = '#F1F5F9')}
+                      onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = 'transparent')}
+                      title="Close"
+                      aria-label="Close"
                     >
                       <X size={20} />
                     </button>
                   </div>
                 </div>
 
-                <div id="printable-loan-schedule" style={{ display: 'flex', flexDirection: 'column', gap: '16px', padding: '16px 0' }}>
+                <div 
+                  id="printable-loan-schedule" 
+                  className="modal-body" 
+                  style={{ display: 'flex', flexDirection: 'column', gap: '20px', padding: '24px' }}
+                >
                   {/* Account Summary Cards */}
                   <div style={{ 
                     display: 'grid', 
                     gridTemplateColumns: 'repeat(4, 1fr)', 
-                    gap: '10px', 
-                    padding: '14px', 
+                    gap: '12px', 
+                    padding: '16px 20px', 
                     backgroundColor: '#F8FAFC', 
-                    borderRadius: '12px',
-                    fontSize: '0.78rem'
+                    borderRadius: '14px',
+                    border: '1px solid #E2E8F0'
                   }}>
                     <div>
-                      <span style={{ color: '#64748B' }}>Sanctioned:</span>
-                      <strong style={{ display: 'block', color: '#0F172A', fontSize: '0.95rem' }}>
+                      <span style={{ fontSize: '0.72rem', fontWeight: 700, color: '#64748B', textTransform: 'uppercase', letterSpacing: '0.02em' }}>Sanctioned:</span>
+                      <strong style={{ display: 'block', color: '#0F172A', fontSize: '1.1rem', fontWeight: 800, marginTop: '2px' }}>
                         ₹{(rec.approvedAmount || rec.requestedAmount).toLocaleString('en-IN')}
                       </strong>
                     </div>
                     <div>
-                      <span style={{ color: '#64748B' }}>Monthly EMI:</span>
-                      <strong style={{ display: 'block', color: '#0E7490', fontSize: '0.95rem' }}>
+                      <span style={{ fontSize: '0.72rem', fontWeight: 700, color: '#64748B', textTransform: 'uppercase', letterSpacing: '0.02em' }}>Monthly EMI:</span>
+                      <strong style={{ display: 'block', color: '#0E7490', fontSize: '1.1rem', fontWeight: 800, marginTop: '2px' }}>
                         ₹{rec.monthlyDeduction.toLocaleString('en-IN')}
                       </strong>
                     </div>
                     <div>
-                      <span style={{ color: '#64748B' }}>Outstanding:</span>
-                      <strong style={{ display: 'block', color: rec.outstandingBalance > 0 ? '#B45309' : '#166534', fontSize: '0.95rem' }}>
+                      <span style={{ fontSize: '0.72rem', fontWeight: 700, color: '#64748B', textTransform: 'uppercase', letterSpacing: '0.02em' }}>Outstanding:</span>
+                      <strong style={{ display: 'block', color: rec.outstandingBalance > 0 ? '#B45309' : '#166534', fontSize: '1.1rem', fontWeight: 800, marginTop: '2px' }}>
                         ₹{rec.outstandingBalance.toLocaleString('en-IN')}
                       </strong>
                     </div>
                     <div>
-                      <span style={{ color: '#64748B' }}>Status:</span>
-                      <div style={{ marginTop: '2px' }}>{renderStatusBadge(rec.status)}</div>
+                      <span style={{ fontSize: '0.72rem', fontWeight: 700, color: '#64748B', textTransform: 'uppercase', letterSpacing: '0.02em' }}>Status:</span>
+                      <div style={{ marginTop: '4px' }}>{renderStatusBadge(rec.status)}</div>
                     </div>
                   </div>
 
                   {/* Monthly Repayment Installments Table */}
                   <div>
-                    <h4 style={{ fontSize: '0.9rem', fontWeight: 800, color: '#0F172A', marginBottom: '8px' }}>
-                      Monthly Repayment Schedule
-                    </h4>
-                    <div className="table-responsive">
-                      <table className="hrms-table" style={{ fontSize: '0.78rem' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+                      <h4 style={{ fontSize: '0.92rem', fontWeight: 800, color: '#0F172A', margin: 0 }}>
+                        Monthly Repayment Schedule
+                      </h4>
+                      <span style={{ fontSize: '0.74rem', color: '#64748B', fontWeight: 600 }}>
+                        {rec.repaymentSchedule.length} Installments Total
+                      </span>
+                    </div>
+                    <div className="table-responsive" style={{ border: '1px solid #E2E8F0', borderRadius: '12px', overflow: 'hidden' }}>
+                      <table className="hrms-table" style={{ fontSize: '0.8rem', margin: 0, width: '100%' }}>
                         <thead>
-                          <tr>
-                            <th>#</th>
-                            <th>Month / Cycle</th>
-                            <th>Scheduled EMI</th>
-                            <th>Actual Deducted</th>
-                            <th>Remaining Balance</th>
-                            <th>Status</th>
+                          <tr style={{ backgroundColor: '#F8FAFC' }}>
+                            <th style={{ width: '48px', textAlign: 'center', padding: '10px 12px' }}>#</th>
+                            <th style={{ padding: '10px 14px' }}>Month / Cycle</th>
+                            <th style={{ textAlign: 'right', padding: '10px 14px' }}>Scheduled EMI</th>
+                            <th style={{ textAlign: 'right', padding: '10px 14px' }}>Actual Deducted</th>
+                            <th style={{ textAlign: 'right', padding: '10px 14px' }}>Remaining Balance</th>
+                            <th style={{ textAlign: 'center', width: '110px', padding: '10px 14px' }}>Status</th>
                           </tr>
                         </thead>
                         <tbody>
                           {rec.repaymentSchedule.map((inst: LoanRepaymentInstallment) => (
                             <tr key={inst.installmentNumber}>
-                              <td>{inst.installmentNumber}</td>
-                              <td><strong>{inst.periodMonth}</strong></td>
-                              <td>₹{inst.scheduledAmount.toLocaleString('en-IN')}</td>
-                              <td style={{ color: inst.actualDeducted > 0 ? '#166534' : '#64748B', fontWeight: 700 }}>
+                              <td style={{ textAlign: 'center', color: '#64748B', padding: '12px' }}>{inst.installmentNumber}</td>
+                              <td style={{ padding: '12px 14px' }}><strong>{inst.periodMonth}</strong></td>
+                              <td style={{ textAlign: 'right', fontWeight: 600, padding: '12px 14px' }}>₹{inst.scheduledAmount.toLocaleString('en-IN')}</td>
+                              <td style={{ textAlign: 'right', color: inst.actualDeducted > 0 ? '#166534' : '#64748B', fontWeight: 700, padding: '12px 14px' }}>
                                 ₹{inst.actualDeducted.toLocaleString('en-IN')}
                               </td>
-                              <td>₹{inst.remainingBalance.toLocaleString('en-IN')}</td>
-                              <td>
+                              <td style={{ textAlign: 'right', fontWeight: 600, padding: '12px 14px' }}>₹{inst.remainingBalance.toLocaleString('en-IN')}</td>
+                              <td style={{ textAlign: 'center', padding: '12px 14px' }}>
                                 <span className={`status-pill ${inst.status === 'Deducted' ? 'approved' : 'pending'}`}>
                                   {inst.status}
                                 </span>
@@ -2225,37 +2338,59 @@ export const AdvanceSalaryManagement: React.FC = () => {
                   {/* Audit Trail (Visible to HR/CEO or summarized) */}
                   {!isViewingAsEmployee && rec.auditLogs && rec.auditLogs.length > 0 && (
                     <div>
-                      <h4 style={{ fontSize: '0.9rem', fontWeight: 800, color: '#0F172A', marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      <h4 style={{ fontSize: '0.92rem', fontWeight: 800, color: '#0F172A', marginBottom: '10px', display: 'flex', alignItems: 'center', gap: '8px' }}>
                         <History size={16} color="#0E7490" /> Audit Log & Lifecycle Trail
                       </h4>
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
                         {rec.auditLogs.map((log: any) => (
                           <div 
                             key={log.id} 
                             style={{ 
-                              padding: '10px 14px', 
+                              padding: '12px 16px', 
                               backgroundColor: '#F8FAFC', 
-                              borderRadius: '8px', 
+                              borderRadius: '12px', 
                               border: '1px solid #E2E8F0',
-                              fontSize: '0.75rem'
+                              fontSize: '0.78rem'
                             }}
                           >
-                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2px' }}>
-                              <strong style={{ color: '#0E7490' }}>{log.action}</strong>
-                              <span style={{ color: '#64748B' }}>{log.timestamp}</span>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '3px' }}>
+                              <strong style={{ color: '#0E7490', fontSize: '0.82rem' }}>{log.action}</strong>
+                              <span style={{ color: '#64748B', fontSize: '0.72rem' }}>{log.timestamp}</span>
                             </div>
-                            <div style={{ color: '#334155' }}>By: {log.performedBy} ({log.performedByRole})</div>
+                            <div style={{ color: '#334155', fontWeight: 500 }}>By: {log.performedBy} ({log.performedByRole})</div>
                             {log.newValue && (
-                              <div style={{ color: '#166534', marginTop: '2px' }}>{log.newValue}</div>
+                              <div style={{ color: '#166534', marginTop: '3px', fontWeight: 600 }}>{log.newValue}</div>
                             )}
                             {log.notes && (
-                              <div style={{ color: '#64748B', fontStyle: 'italic', marginTop: '2px' }}>{log.notes}</div>
+                              <div style={{ color: '#64748B', fontStyle: 'italic', marginTop: '3px' }}>{log.notes}</div>
                             )}
                           </div>
                         ))}
                       </div>
                     </div>
                   )}
+                </div>
+
+                <div 
+                  className="modal-footer" 
+                  style={{ 
+                    padding: '14px 24px', 
+                    borderTop: '1px solid #E2E8F0', 
+                    display: 'flex', 
+                    justifyContent: 'flex-end', 
+                    backgroundColor: '#F8FAFC',
+                    borderBottomLeftRadius: '20px',
+                    borderBottomRightRadius: '20px'
+                  }}
+                >
+                  <button 
+                    type="button" 
+                    className="btn btn-secondary" 
+                    onClick={() => { setSelectedRecordForDetail(null); setScheduleModalRecord(null); }}
+                    style={{ borderRadius: '10px', padding: '7px 18px', fontSize: '0.84rem', fontWeight: 600 }}
+                  >
+                    Close
+                  </button>
                 </div>
               </div>
             </div>

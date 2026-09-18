@@ -7,6 +7,7 @@ import {
   PerformanceReviewRecord
 } from '../../types/performance';
 import { PerformanceTerminologyTooltip } from './PerformanceTerminologyTooltip';
+import { formatDateDDMMYYYY } from '../../utils/dateUtils';
 import {
   User,
   Target,
@@ -46,8 +47,7 @@ export const EmployeeMyPerformanceView: React.FC<EmployeeMyPerformanceViewProps>
   // Find the logged-in employee record matching ID, name, or fallback to first employee
   const currentEmp = employees.find(e => 
     (currentUser.employeeId && e.employeeId.toLowerCase() === currentUser.employeeId.toLowerCase()) ||
-    e.employeeName.toLowerCase().includes(currentUser.name.toLowerCase().split(' ')[0]) ||
-    e.employeeId === 'EMP-005' // fallback default demo employee
+    e.employeeName.toLowerCase().includes(currentUser.name.toLowerCase().split(' ')[0])
   ) || employees[0];
 
   // Active Tab for Employee Self-Service
@@ -525,7 +525,7 @@ export const EmployeeMyPerformanceView: React.FC<EmployeeMyPerformanceViewProps>
                   </div>
                   <p style={{ margin: '0 0 6px', fontSize: '12px', color: '#64748B' }}>{g.description}</p>
                   <span style={{ fontSize: '11px', color: '#0E7490', fontWeight: 700 }}>
-                    Target: {g.targetMetric} • Due Date: {g.dueDate}
+                    Target: {g.targetMetric} • Due Date: {formatDateDDMMYYYY(g.dueDate)}
                   </span>
                 </div>
 
@@ -743,7 +743,7 @@ export const EmployeeMyPerformanceView: React.FC<EmployeeMyPerformanceViewProps>
                     <div>
                       <strong style={{ fontSize: '15px', color: '#1E293B' }}>{rev.reviewPeriodLabel}</strong>
                       <span style={{ display: 'block', fontSize: '12px', color: '#64748B' }}>
-                        Reviewed by {rev.reviewerName} ({rev.reviewerRole}) on {rev.reviewDate}
+                        Reviewed by {rev.reviewerName} ({rev.reviewerRole}) on {formatDateDDMMYYYY(rev.reviewDate)}
                       </span>
                     </div>
 
@@ -867,7 +867,7 @@ export const EmployeeMyPerformanceView: React.FC<EmployeeMyPerformanceViewProps>
                 5. When will it be reviewed?
               </strong>
               <p style={{ margin: 0, fontSize: '13px', color: '#1E293B', lineHeight: '1.45' }}>
-                Review Frequency: <strong>{myPip.reviewFrequency}</strong> with <strong>{myPip.assignedReviewer}</strong>. Final date: <strong>{myPip.targetEndDate}</strong>.
+                Review Frequency: <strong>{myPip.reviewFrequency}</strong> with <strong>{myPip.assignedReviewer}</strong>. Final date: <strong>{formatDateDDMMYYYY(myPip.targetEndDate)}</strong>.
               </p>
             </div>
 

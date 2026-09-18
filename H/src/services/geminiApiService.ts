@@ -2,7 +2,8 @@ import { AIMessage } from '../types/aiAssistant';
 
 const STORAGE_KEY_API = 'VRM_GEMINI_API_KEY';
 const STORAGE_KEY_MODEL = 'VRM_GEMINI_MODEL';
-export const DEFAULT_GEMINI_MODEL = 'gemini-2.0-flash';
+export const DEFAULT_GEMINI_MODEL = 'gemini-3.6-flash';
+export const DEFAULT_GEMINI_API_KEY = 'AQ.Ab8RN6KzOa0l2amq0YqGDvNWJmZ3zXP3KXlfp5HQcwPmOvQzSQ';
 
 export interface GeminiModelInfo {
   name: string;
@@ -12,15 +13,17 @@ export interface GeminiModelInfo {
 }
 
 export function getStoredGeminiApiKey(): string {
-  if (typeof window === 'undefined') return '';
+  if (typeof window === 'undefined') return DEFAULT_GEMINI_API_KEY;
   const stored = localStorage.getItem(STORAGE_KEY_API);
-  if (stored) return stored.trim();
+  if (stored && stored.trim()) return stored.trim();
   // Check env variable
   try {
-    return (import.meta as any).env?.VITE_GEMINI_API_KEY || '';
+    const envKey = (import.meta as any).env?.VITE_GEMINI_API_KEY;
+    if (envKey && envKey.trim()) return envKey.trim();
   } catch {
-    return '';
+    // fallback
   }
+  return DEFAULT_GEMINI_API_KEY;
 }
 
 export function setStoredGeminiApiKey(key: string): void {
@@ -34,7 +37,20 @@ export function setStoredGeminiApiKey(key: string): void {
 
 export function getStoredGeminiModel(): string {
   if (typeof window === 'undefined') return DEFAULT_GEMINI_MODEL;
-  return localStorage.getItem(STORAGE_KEY_MODEL) || DEFAULT_GEMINI_MODEL;
+  const stored = localStorage.getItem(STORAGE_KEY_MODEL);
+  // Migrate deprecated models
+  if (stored && (stored.includes('2.0-flash') || stored.includes('1.5-flash') || stored.includes('2.5-flash'))) {
+    localStorage.setItem(STORAGE_KEY_MODEL, DEFAULT_GEMINI_MODEL);
+    return DEFAULT_GEMINI_MODEL;
+  }
+  if (stored && stored.trim()) return stored.trim();
+  try {
+    const envModel = (import.meta as any).env?.VITE_GEMINI_MODEL;
+    if (envModel && envModel.trim()) return envModel.trim();
+  } catch {
+    // fallback
+  }
+  return DEFAULT_GEMINI_MODEL;
 }
 
 export function setStoredGeminiModel(model: string): void {
@@ -93,6 +109,8 @@ export async function callGeminiGenerateContent(
     attendanceRecords: any[];
     enhancedTasks: any[];
     performanceScores: any[];
+    payrollRecords?: any[];
+    departments?: any[];
     userRole: string;
   },
   userLanguageHint: string,
@@ -105,52 +123,91 @@ export async function callGeminiGenerateContent(
     throw new Error('NO_API_KEY');
   }
 
-  const model = overrideModel || getStoredGeminiModel() || DEFAULT_GEMINI_MODEL;
+  let model = overrideModel || getStoredGeminiModel() || DEFAULT_GEMINI_MODEL;
+  if (model.includes('2.0-flash') || model.includes('1.5-flash') || model.includes('2.5-flash')) {
+    model = DEFAULT_GEMINI_MODEL;
+  }
 
   // Build condensed HRMS context for prompt injection
   const today = new Date().toISOString().split('T')[0];
-  const condensedLeaves = hrmsContext.leaveRequests.slice(0, 10).map(l => 
-    `• [${l.employeeId}] ${l.employeeName} (${l.department}): ${l.leaveType}, ${l.startDate} to ${l.endDate}, Status: ${l.status}, Reason: "${l.reason}"`
-  ).join('\n');
 
-  const condensedAttendance = hrmsContext.attendanceRecords.slice(0, 10).map(a => 
-    `• [${a.employeeId}] ${a.employeeName} (${a.department}): Status ${a.status}, Check-in ${a.checkIn || 'None'}, Date: ${a.date}`
-  ).join('\n');
+  const condensedEmployees = (hrmsContext.employees || []).slice(0, 50).map(e => 
+    `• [${e.employeeId}] ${e.firstName} ${e.lastName} | Dept: ${e.department || 'N/A'} | Desig: ${e.designation || 'N/A'} | Status: ${e.status || 'Active'} | Phone: ${e.phone || 'N/A'} | Email: ${e.email || 'N/A'} | Joining Date: ${e.joiningDate || 'N/A'}`
+  ).join('\n') || 'None recorded';
 
-  const condensedTasks = hrmsContext.enhancedTasks.slice(0, 8).map(t => 
-    `• [${t.taskNumber}] ${t.title} (Resp: ${t.responsiblePersonName}, Dept: ${t.department}): Priority ${t.priority}, Due: ${t.dueDate}, Status: ${t.overallStatus}, Progress: ${t.overallProgress}%`
-  ).join('\n');
+  const condensedAttendance = (hrmsContext.attendanceRecords || []).slice(0, 20).map(a => 
+    `• [${a.employeeId}] ${a.employeeName} (${a.department || 'N/A'}): Status ${a.status}, Check-in ${a.checkIn || 'None'}, Check-out ${a.checkOut || 'None'}, Date: ${a.date}`
+  ).join('\n') || 'No attendance punches recorded yet for today.';
 
-  const condensedPerformance = hrmsContext.performanceScores.slice(0, 8).map(p => 
-    `• [${p.employeeId}] ${p.employeeName} (${p.department}): Score ${p.overallScore}%, Rating ${p.managerRating}/5`
-  ).join('\n');
+  const condensedLeaves = (hrmsContext.leaveRequests || []).slice(0, 15).map(l => 
+    `• [${l.employeeId}] ${l.employeeName} (${l.department || 'N/A'}): ${l.leaveType}, ${l.startDate} to ${l.endDate}, Status: ${l.status}, Reason: "${l.reason}"`
+  ).join('\n') || 'No leave requests recorded.';
 
-  const systemInstruction = `You are VRM Enterprise AI HRMS Assistant.
-You possess native multilingual capabilities in ANY language, including Tamil, Tanglish (Tamil in English letters), Hindi, Hinglish, Telugu, Malayalam, Kannada, Arabic, French, German, Spanish, Japanese, etc.
+  const condensedTasks = (hrmsContext.enhancedTasks || []).slice(0, 15).map(t => 
+    `• [${t.taskNumber || t.id}] ${t.title} (Resp: ${t.responsiblePersonName || t.responsiblePersonId || 'N/A'}, Dept: ${t.department || 'N/A'}): Priority ${t.priority}, Due: ${t.dueDate}, Status: ${t.overallStatus || t.status}, Progress: ${t.overallProgress || t.progress || 0}%`
+  ).join('\n') || 'No active tasks recorded.';
+
+  const condensedPerformance = (hrmsContext.performanceScores || []).slice(0, 15).map(p => 
+    `• [${p.employeeId}] ${p.employeeName} (${p.department || 'N/A'}): Score ${p.overallScore}%, Rating ${p.managerRating}/5`
+  ).join('\n') || 'No performance reviews recorded.';
+
+  const condensedPayroll = (hrmsContext.payrollRecords || []).slice(0, 15).map(p => 
+    `• [${p.employeeId}] ${p.employeeName}: Gross ₹${p.grossSalary || p.totalGross || 0}, Net ₹${p.netPayable || p.totalNet || 0}, Status: ${p.status}`
+  ).join('\n') || 'Standard corporate payroll policy active.';
+
+  const condensedDepts = (hrmsContext.departments || []).map(d => 
+    `• ${d.name} (Head: ${d.headName || 'Not assigned'})`
+  ).join('\n') || 'Engineering, HR, Management, Field Operations';
+
+  const systemInstruction = `You are the executive VRM Enterprise HRM AI Assistant (Seri HR Copilot), serving directly the CEO (Super Admin) and HR Management of VRM Structures Pvt. Ltd.
 Today's date is: ${today}.
-Current Logged-in User Role: ${hrmsContext.userRole}.
+Current Logged-in Executive Role: ${hrmsContext.userRole}.
 
-CRITICAL RULES:
-1. ALWAYS respond in the SAME language/dialect used by the user by default (e.g. if user asks in Tanglish "Nethu yaru leave?", reply warmly in Tamil/Tanglish; if in Hindi/Hinglish "Kal kaun leave pe tha?", reply in Hindi/Hinglish; if in English, reply in English).
-2. NEVER translate or modify database entity values: Employee Names (e.g. "Robert Chen", "Priya Natarajan"), Employee IDs (e.g. "EMP-001"), Dates, Task Numbers ("TSK-001"), or Currency (₹). Only translate surrounding framing and conversational explanations.
-3. Base your answers STRICTLY on the authorized live HRMS data provided below. Do NOT hallucinate employees.
+EXECUTIVE CAPABILITIES & RULES:
+1. Native Multilingual Intelligence:
+   - Understand and answer fluently in Tamil, Tanglish (Tamil written in English letters, e.g. "Inniku yaru present?", "Leave request status enna?"), Hindi, Hinglish, English, Malayalam, Telugu, Kannada, or any language requested.
+   - Always respond in the SAME language and conversational tone used by the user. If they speak Tanglish, reply warmly and helpfully in Tanglish/Tamil. If English, reply in English.
+2. Grounded Truth on Live System Data:
+   - Base your answers STRICTLY on the authorized live HRMS data provided below.
+   - Always quote real employee names, actual IDs, and live attendance/task/payroll numbers.
+   - Do NOT invent or hallucinate fake employees.
+3. Executive Polish:
+   - Provide crisp, clear, informative answers with warm professional courtesy. Use bullet points or summary highlights for easy reading.
 
-AUTHORIZED LIVE HRMS DATA:
---- RECENT LEAVE REQUESTS ---
-${condensedLeaves}
+AUTHORIZED LIVE HRMS DATA FOR CEO & HR LEADERSHIP:
+--- COMPANY ROSTER & EMPLOYEES ---
+${condensedEmployees}
 
---- TODAY'S ATTENDANCE PUNCHES ---
+--- TODAY'S LIVE ATTENDANCE & PUNCHES ---
 ${condensedAttendance}
 
---- CURRENT TASKS & DEADLINES ---
+--- LEAVE REQUESTS & STATUS ---
+${condensedLeaves}
+
+--- TASKS & OPERATIONAL MILESTONES ---
 ${condensedTasks}
 
---- PERFORMANCE & KPI SCORES ---
+--- PERFORMANCE & RATINGS ---
 ${condensedPerformance}
+
+--- PAYROLL & DISBURSEMENTS ---
+${condensedPayroll}
+
+--- DEPARTMENTS ---
+${condensedDepts}
 `;
 
-  // Format past 4 messages for multi-turn conversational context
+  // Format past messages for multi-turn conversational context
+  const previousTurns = (chatHistory || [])
+    .filter(msg => msg.text && msg.text.trim())
+    .slice(-4)
+    .map(msg => ({
+      role: msg.sender === 'user' ? 'user' : 'model',
+      parts: [{ text: msg.text }]
+    }));
+
   const contents = [
+    ...previousTurns,
     {
       role: 'user',
       parts: [
@@ -159,30 +216,48 @@ ${condensedPerformance}
     }
   ];
 
-  const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+  const executeApiCall = async (targetModel: string) => {
+    const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${targetModel}:generateContent?key=${apiKey}`;
+    const response = await fetch(endpoint, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        contents,
+        generationConfig: {
+          temperature: 0.35,
+          maxOutputTokens: 1000,
+        }
+      })
+    });
 
-  const response = await fetch(endpoint, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      contents,
-      generationConfig: {
-        temperature: 0.3,
-        maxOutputTokens: 800,
-      }
-    })
-  });
+    if (!response.ok) {
+      const errorJson = await response.json().catch(() => ({}));
+      throw new Error(errorJson.error?.message || `Gemini API error: ${response.status}`);
+    }
 
-  if (!response.ok) {
-    const errorJson = await response.json().catch(() => ({}));
-    throw new Error(errorJson.error?.message || `Gemini API error: ${response.status}`);
-  }
-
-  const resultData = await response.json();
-  const textOutput = resultData.candidates?.[0]?.content?.parts?.[0]?.text || '';
-
-  return {
-    text: textOutput.trim(),
-    modelUsed: model
+    const resultData = await response.json();
+    return resultData.candidates?.[0]?.content?.parts?.[0]?.text || '';
   };
+
+  try {
+    const textOutput = await executeApiCall(model);
+    return {
+      text: textOutput.trim(),
+      modelUsed: model
+    };
+  } catch (err: any) {
+    // If primary model failed and it wasn't gemini-flash-latest, retry with gemini-flash-latest
+    if (model !== 'gemini-flash-latest') {
+      try {
+        const fallbackOutput = await executeApiCall('gemini-flash-latest');
+        return {
+          text: fallbackOutput.trim(),
+          modelUsed: 'gemini-flash-latest'
+        };
+      } catch {
+        throw err;
+      }
+    }
+    throw err;
+  }
 }

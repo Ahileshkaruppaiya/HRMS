@@ -1,5 +1,9 @@
 import { getSupabaseAdmin, isRealSupabaseConfigured } from '../config/supabase.js';
 import { PayrollSettingsModel } from '../types/payroll.js';
+import { memoryCache } from '../services/cacheService.js';
+
+const SETTINGS_CACHE_KEY = 'payroll_settings_global';
+const SETTINGS_TTL_MS = 60000; // 60 seconds
 
 // Fallback in-memory defaults matching project rules
 let inMemorySettings: PayrollSettingsModel = {
@@ -40,7 +44,13 @@ let inMemorySettings: PayrollSettingsModel = {
 
 export class SettingsRepository {
   async getSettings(): Promise<PayrollSettingsModel> {
+    const cached = memoryCache.get<PayrollSettingsModel>(SETTINGS_CACHE_KEY);
+    if (cached) {
+      return cached;
+    }
+
     if (!isRealSupabaseConfigured()) {
+      memoryCache.set(SETTINGS_CACHE_KEY, { ...inMemorySettings }, SETTINGS_TTL_MS);
       return { ...inMemorySettings };
     }
 
@@ -53,10 +63,11 @@ export class SettingsRepository {
         .single();
 
       if (error || !data) {
+        memoryCache.set(SETTINGS_CACHE_KEY, { ...inMemorySettings }, SETTINGS_TTL_MS);
         return { ...inMemorySettings };
       }
 
-      return {
+      const parsed: PayrollSettingsModel = {
         id: data.id,
         orgKey: data.org_key,
         pfEnabled: data.pf_enabled,
@@ -75,12 +86,18 @@ export class SettingsRepository {
         standardWorkingDays: data.standard_working_days,
         payrollCycleDay: data.payroll_cycle_day,
       };
+
+      memoryCache.set(SETTINGS_CACHE_KEY, parsed, SETTINGS_TTL_MS);
+      return parsed;
     } catch {
+      memoryCache.set(SETTINGS_CACHE_KEY, { ...inMemorySettings }, SETTINGS_TTL_MS);
       return { ...inMemorySettings };
     }
   }
 
   async updateSettings(updates: Partial<PayrollSettingsModel>): Promise<PayrollSettingsModel> {
+    memoryCache.invalidate(SETTINGS_CACHE_KEY);
+
     inMemorySettings = {
       ...inMemorySettings,
       ...updates,
@@ -123,6 +140,50 @@ export class SettingsRepository {
 
     return this.getSettings();
   }
+
+  async getCompanySettings(): Promise<any> {
+    return inMemoryCompanySettings;
+  }
+
+  async updateCompanySettings(updates: any): Promise<any> {
+    inMemoryCompanySettings = { ...inMemoryCompanySettings, ...updates };
+    return inMemoryCompanySettings;
+  }
+
+  async getGeofenceSettings(): Promise<any> {
+    return inMemoryGeofenceSettings;
+  }
+
+  async updateGeofenceSettings(updates: any): Promise<any> {
+    inMemoryGeofenceSettings = { ...inMemoryGeofenceSettings, ...updates };
+    return inMemoryGeofenceSettings;
+  }
 }
 
+let inMemoryCompanySettings = {
+  companyName: 'VRM Structures India Private Limited',
+  legalEntity: 'VRM Structures India Pvt. Ltd.',
+  taxIdGst: '33AABCV1234F1Z5',
+  pfRegistrationNumber: 'TN/MAS/0045892/000',
+  esiRegistrationNumber: '51000789210001001',
+  address: 'Plot 42, SIDCO Industrial Estate, Sriperumbudur',
+  city: 'Chennai',
+  state: 'Tamil Nadu',
+  pincode: '602105',
+  contactEmail: 'contact@vrmstructures.com',
+  contactPhone: '+91 44 2716 8900',
+  website: 'https://vrmstructures.com',
+};
+
+let inMemoryGeofenceSettings = {
+  officeName: 'VRM Structures Corporate HQ & Plant',
+  address: 'Plot 42, SIDCO Industrial Estate, Sriperumbudur, Tamil Nadu 602105',
+  latitude: 13.0827,
+  longitude: 80.2707,
+  radiusMeters: 200,
+  isEnabled: true,
+  strictMode: false,
+};
+
 export const settingsRepository = new SettingsRepository();
+

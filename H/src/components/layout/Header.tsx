@@ -1,14 +1,12 @@
 import React, { useState } from 'react';
 import { useHRMS } from '../../context/HRMSContext';
-import { Role } from '../../types/hrms';
 import { 
   Bell, 
   Plus, 
   ChevronDown, 
   Menu, 
   LogOut, 
-  User, 
-  Settings as SettingsIcon
+  User
 } from 'lucide-react';
 
 interface HeaderProps {
@@ -25,7 +23,6 @@ export const Header: React.FC<HeaderProps> = ({
 }) => {
   const { 
     currentUser, 
-    updateCurrentUser,
     activeModule,
     businessSettings,
     notifications, 
@@ -50,20 +47,21 @@ export const Header: React.FC<HeaderProps> = ({
       case 'organization': return 'Organization';
       case 'face_attendance': return 'Live Face Attendance';
       case 'attendance': return 'Attendance Management';
-      case 'leaves': return 'Leave Management';
-      case 'shifts': return 'Shift Management';
+      case 'leaves': return currentUser.role === 'Employee' ? 'Leave Request' : 'Leave Management';
+      case 'shifts': return currentUser.role === 'Employee' ? 'My Shift' : 'Shift Management';
       case 'overtime': return currentUser.role === 'Employee' ? 'My Overtime Requests' : 'Overtime Management';
       case 'tasks': return 'Tasks';
       case 'performance': return 'Performance';
       case 'notifications': return 'Notifications';
-      case 'recruitment': return 'Recruitment';
+      case 'recruitment': return currentUser.role === 'Employee' ? 'Referral Portal' : 'Recruitment';
       case 'finance': return 'Finance & Expenses';
       case 'payroll': return 'Payroll';
-      case 'advance_salary': return currentUser.role === 'Employee' ? 'My Advance Salary / Loan' : 'Advance Salary & Loan Management';
+      case 'advance_salary': return currentUser.role === 'Employee' ? 'My Advance Salary' : 'Advance Salary Management';
       case 'reports': return 'Attendance Reports';
-      case 'assets': return 'Asset Management';
+      case 'assets': return currentUser.role === 'Employee' ? 'My Assets' : 'Asset Management';
       case 'settings': return 'Settings';
       case 'profile': return 'My Profile';
+      case 'tracking': return currentUser.role === 'Employee' ? 'My Field Duty & Tracking' : 'Field Duty & GPS Tracking';
       default: return 'Dashboard';
     }
   };
@@ -85,7 +83,7 @@ export const Header: React.FC<HeaderProps> = ({
         {/* Breadcrumb Title */}
         <div className="header-breadcrumb">
           <span className="header-brand-prefix">
-            {businessSettings?.businessName || 'VRM HRM'} |
+            {businessSettings?.businessName || 'Businz'} |
           </span>
           <span className="header-module-title">
             {getModuleTitle(activeModule)}
@@ -105,8 +103,8 @@ export const Header: React.FC<HeaderProps> = ({
             }}
           >
             <Plus size={15} strokeWidth={2.5} />
-            <span>Quick Add</span>
-            <ChevronDown size={13} strokeWidth={2.5} />
+            <span className="quick-add-text">Quick Add</span>
+            <ChevronDown size={13} strokeWidth={2.5} className="quick-add-chevron" />
           </button>
 
           {showQuickAddMenu && (
@@ -120,6 +118,7 @@ export const Header: React.FC<HeaderProps> = ({
                 top: 'calc(100% + 8px)',
                 right: 0,
                 width: '190px',
+                maxWidth: 'calc(100vw - 32px)',
                 padding: '6px',
                 zIndex: 50,
                 boxShadow: 'var(--shadow-xl)',
@@ -162,20 +161,22 @@ export const Header: React.FC<HeaderProps> = ({
                       setShowQuickAddMenu(false); 
                     }}
                   >
-                    + Create Task
+                    {currentUser.role === 'CEO' || currentUser.designation === 'CEO' || currentUser.employeeId === 'EMP-000' ? '+ Assign Task' : '+ Create Task'}
                   </button>
                 )}
-                <button
-                  type="button"
-                  className="dropdown-menu-item"
-                  onClick={(e) => { 
-                    e.stopPropagation(); 
-                    onOpenQuickAdd('expense'); 
-                    setShowQuickAddMenu(false); 
-                  }}
-                >
-                  + Submit Expense
-                </button>
+                {currentUser.role === 'Employee' && (
+                  <button
+                    type="button"
+                    className="dropdown-menu-item"
+                    onClick={(e) => { 
+                      e.stopPropagation(); 
+                      onOpenQuickAdd('expense'); 
+                      setShowQuickAddMenu(false); 
+                    }}
+                  >
+                    + Submit Expense
+                  </button>
+                )}
               </div>
             </>
           )}
@@ -207,6 +208,7 @@ export const Header: React.FC<HeaderProps> = ({
                 top: 'calc(100% + 8px)',
                 right: 0,
                 width: '340px',
+                maxWidth: 'calc(100vw - 32px)',
                 padding: '16px',
                 zIndex: 50,
                 boxShadow: 'var(--shadow-xl)',
@@ -280,7 +282,7 @@ export const Header: React.FC<HeaderProps> = ({
                 {currentUser.designation || (currentUser.role === 'Super Admin' ? 'CEO' : currentUser.role)}
               </span>
             </div>
-            <ChevronDown size={14} color="#FFFFFF" strokeWidth={2.4} style={{ opacity: 0.85 }} />
+            <ChevronDown className="user-chevron" size={14} color="#FFFFFF" strokeWidth={2.4} style={{ opacity: 0.85 }} />
           </div>
 
           {showProfileMenu && (
@@ -294,6 +296,7 @@ export const Header: React.FC<HeaderProps> = ({
                 top: 'calc(100% + 8px)',
                 right: 0,
                 width: '220px',
+                maxWidth: 'calc(100vw - 32px)',
                 padding: '8px',
                 zIndex: 50,
                 boxShadow: 'var(--shadow-xl)',
@@ -306,145 +309,6 @@ export const Header: React.FC<HeaderProps> = ({
                   <div style={{ fontSize: '0.72rem', color: '#64748B' }}>{currentUser.email}</div>
                 </div>
 
-                {/* Instant Demo Role Switcher */}
-                <div style={{ padding: '8px 10px', background: '#F8FAFC', borderRadius: '10px', marginBottom: '8px', border: '1px solid #E2E8F0' }}>
-                  <div style={{ fontSize: '0.66rem', fontWeight: 800, color: '#64748B', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: '6px' }}>
-                    Switch Role (Demo):
-                  </div>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        updateCurrentUser({
-                          id: 'USR-001',
-                          name: 'Velmurugan',
-                          email: 'ceo@vrmstructures.com',
-                          role: 'Super Admin',
-                          designation: 'CEO',
-                          department: 'Management',
-                          employeeId: 'EMP-000'
-                        });
-                        setShowProfileMenu(false);
-                      }}
-                      style={{
-                        padding: '4px 8px',
-                        fontSize: '0.72rem',
-                        fontWeight: 700,
-                        borderRadius: '6px',
-                        border: currentUser.role === 'Super Admin' ? '1px solid #0E7490' : '1px solid #E2E8F0',
-                        background: currentUser.role === 'Super Admin' ? '#0E7490' : '#FFFFFF',
-                        color: currentUser.role === 'Super Admin' ? '#FFFFFF' : '#334155',
-                        cursor: 'pointer',
-                        textAlign: 'left',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'space-between'
-                      }}
-                    >
-                      <span>👑 CEO (Super Admin)</span>
-                      {currentUser.role === 'Super Admin' && <span style={{ fontSize: '0.65rem' }}>Active</span>}
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() => {
-                        updateCurrentUser({
-                          id: 'EMP-001',
-                          name: 'Pavithra',
-                          email: 'hr@vrmstructures.com',
-                          role: 'HR Admin',
-                          designation: 'HR Specialist',
-                          department: 'Human Resources',
-                          employeeId: 'EMP-001'
-                        });
-                        setShowProfileMenu(false);
-                      }}
-                      style={{
-                        padding: '4px 8px',
-                        fontSize: '0.72rem',
-                        fontWeight: 700,
-                        borderRadius: '6px',
-                        border: currentUser.role === 'HR Admin' ? '1px solid #7C3AED' : '1px solid #E2E8F0',
-                        background: currentUser.role === 'HR Admin' ? '#7C3AED' : '#FFFFFF',
-                        color: currentUser.role === 'HR Admin' ? '#FFFFFF' : '#334155',
-                        cursor: 'pointer',
-                        textAlign: 'left',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'space-between'
-                      }}
-                    >
-                      <span>💼 HR (HR Admin)</span>
-                      {currentUser.role === 'HR Admin' && <span style={{ fontSize: '0.65rem' }}>Active</span>}
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() => {
-                        updateCurrentUser({
-                          id: 'EMP-008',
-                          name: 'Arun Kumar',
-                          email: 'arun.sales@vrmstructures.com',
-                          role: 'Department Head',
-                          designation: 'Sales Department Head',
-                          department: 'Sales',
-                          employeeId: 'EMP-008'
-                        });
-                        setShowProfileMenu(false);
-                      }}
-                      style={{
-                        padding: '4px 8px',
-                        fontSize: '0.72rem',
-                        fontWeight: 700,
-                        borderRadius: '6px',
-                        border: (currentUser.role === 'Department Head' || currentUser.role === 'Manager') ? '1px solid #0E7490' : '1px solid #E2E8F0',
-                        background: (currentUser.role === 'Department Head' || currentUser.role === 'Manager') ? '#0E7490' : '#FFFFFF',
-                        color: (currentUser.role === 'Department Head' || currentUser.role === 'Manager') ? '#FFFFFF' : '#334155',
-                        cursor: 'pointer',
-                        textAlign: 'left',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'space-between'
-                      }}
-                    >
-                      <span>👔 Manager (Sales Head)</span>
-                      {(currentUser.role === 'Department Head' || currentUser.role === 'Manager') && <span style={{ fontSize: '0.65rem' }}>Active</span>}
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() => {
-                        updateCurrentUser({
-                          id: 'EMP-005',
-                          name: 'Murugan',
-                          email: 'murugan.fe@vrmstructures.com',
-                          role: 'Employee',
-                          designation: 'Floor Employee',
-                          department: 'Production',
-                          employeeId: 'EMP-005'
-                        });
-                        setShowProfileMenu(false);
-                      }}
-                      style={{
-                        padding: '4px 8px',
-                        fontSize: '0.72rem',
-                        fontWeight: 700,
-                        borderRadius: '6px',
-                        border: currentUser.role === 'Employee' ? '1px solid #D97706' : '1px solid #E2E8F0',
-                        background: currentUser.role === 'Employee' ? '#D97706' : '#FFFFFF',
-                        color: currentUser.role === 'Employee' ? '#FFFFFF' : '#334155',
-                        cursor: 'pointer',
-                        textAlign: 'left',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'space-between'
-                      }}
-                    >
-                      <span>👷 Employee (Murugan)</span>
-                      {currentUser.role === 'Employee' && <span style={{ fontSize: '0.65rem' }}>Active</span>}
-                    </button>
-                  </div>
-                </div>
                 <button
                   type="button"
                   className="dropdown-menu-item"
@@ -456,21 +320,7 @@ export const Header: React.FC<HeaderProps> = ({
                 >
                   <User size={16} /> My Profile
                 </button>
-                <button
-                  type="button"
-                  className="dropdown-menu-item"
-                  onClick={() => { 
-                    setActiveModule('settings'); 
-                    if (currentUser.role === 'Employee') {
-                      setActiveSettingsTab('my_profile');
-                    } else {
-                      setActiveSettingsTab('company_details');
-                    }
-                    setShowProfileMenu(false); 
-                  }}
-                >
-                  <SettingsIcon size={16} /> Settings & Policies
-                </button>
+
                 <div style={{ borderTop: '1px solid #E2E8F0', margin: '4px 0' }} />
                 <button
                   type="button"

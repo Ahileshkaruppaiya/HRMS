@@ -9,6 +9,7 @@ import {
 } from '../../types/settings';
 import { validateFormula, evaluateFormula } from '../../services/policyEngine';
 import { payrollApi } from '../../services/payrollApi';
+import { INITIAL_PAYROLL_CONFIG } from '../../data/settingsInitialData';
 import { 
   CreditCard, 
   Plus, 
@@ -26,6 +27,7 @@ import {
   Trash2,
   TrendingUp,
   Info,
+  RotateCcw,
   X
 } from 'lucide-react';
 
@@ -108,6 +110,20 @@ export const PayrollSettings: React.FC = () => {
   });
   const [sandboxResult, setSandboxResult] = useState<number | null>(3600);
   const [sandboxValidation, setSandboxValidation] = useState<{ isValid: boolean; error?: string }>({ isValid: true });
+
+  // Auto-sync company official 100% CTC structure if obsolete template is loaded (e.g. Conveyance ₹1600 fixed or Special Allowance)
+  React.useEffect(() => {
+    const comps = payrollSettingsConfig.components || [];
+    const hasObsolete = comps.some(
+      c => c.code === 'SPEC' || c.code === 'MED' || (c.code === 'CONV' && c.calculationMethod === 'FIXED_AMOUNT') || (c.code === 'HRA' && c.defaultValue === 40 && c.percentageBase === 'BASIC')
+    ) || !comps.some(c => c.code === 'BASIC') || !comps.some(c => c.code === 'DA');
+
+    if (hasObsolete) {
+      updatePayrollSettingsConfig(INITIAL_PAYROLL_CONFIG);
+      setPfConfig(INITIAL_PAYROLL_CONFIG.pfPolicy);
+      setEsicConfig(INITIAL_PAYROLL_CONFIG.esicPolicy);
+    }
+  }, [payrollSettingsConfig.components, updatePayrollSettingsConfig]);
 
   // Component Edit Modal
   const [isCompModalOpen, setIsCompModalOpen] = useState(false);
@@ -340,8 +356,8 @@ export const PayrollSettings: React.FC = () => {
     setIsSlabModalOpen(false);
   };
 
-  // Filter out BASIC salary from components table since it is defined individually per employee in Employee Directory
-  const earnings = payrollSettingsConfig.components.filter(c => c.type === 'EARNING' && c.code !== 'BASIC');
+  // Official company earnings (Basic 40%, DA 20%, HRA 35%, Conveyance 5% = 100% CTC)
+  const earnings = payrollSettingsConfig.components.filter(c => c.type === 'EARNING');
   const deductions = payrollSettingsConfig.components.filter(c => c.type === 'DEDUCTION');
 
   return (
@@ -482,63 +498,31 @@ export const PayrollSettings: React.FC = () => {
           </button>
         </div>
 
-        {/* Action Button on Right */}
+        {/* Action Buttons on Right */}
         {isPrivileged && (
-          <button
-            type="button"
-            className="btn btn-primary btn-sm"
-            onClick={openAddCompModal}
-            style={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: '6px',
-              fontSize: '0.82rem',
-              padding: '7px 14px',
-              borderRadius: '10px'
-            }}
-          >
-            <Plus size={15} /> Add Salary Component
-          </button>
+          <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
+            <button
+              type="button"
+              className="btn btn-primary btn-sm"
+              onClick={openAddCompModal}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '6px',
+                fontSize: '0.82rem',
+                padding: '7px 14px',
+                borderRadius: '10px'
+              }}
+            >
+              <Plus size={15} /> Add Salary Component
+            </button>
+          </div>
         )}
       </div>
 
       {/* TAB 1: SALARY COMPONENTS */}
       {activeTab === 'components' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-          {/* Note Banner: Basic Salary is configured per employee */}
-          <div style={{
-            backgroundColor: '#F0FDFA',
-            border: '1px solid #CCFBF1',
-            borderRadius: '14px',
-            padding: '16px 20px',
-            display: 'flex',
-            alignItems: 'center',
-            gap: '14px',
-            boxShadow: '0 1px 3px rgba(0,0,0,0.02)'
-          }}>
-            <div style={{
-              width: '38px',
-              height: '38px',
-              borderRadius: '10px',
-              backgroundColor: '#CCFBF1',
-              color: '#0E7490',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              flexShrink: 0
-            }}>
-              <Info size={20} />
-            </div>
-            <div>
-              <div style={{ fontSize: '0.9rem', fontWeight: 800, color: '#0F766E', marginBottom: '2px' }}>
-                Individual Basic Salary Configured During Employee Onboarding
-              </div>
-              <div style={{ fontSize: '0.82rem', color: '#115E59', lineHeight: '1.45' }}>
-                Basic salary differs per employee and is entered individually when onboarding under <strong>Employee Directory &gt; Add Employee</strong>. The table below manages company allowances (% of Basic or Fixed amounts), bonus components, and deductions with full Add, Edit, and Delete access.
-              </div>
-            </div>
-          </div>
-
           {/* Earnings Table */}
           <div style={{ backgroundColor: '#FFFFFF', borderRadius: '16px', border: '1px solid #E7ECF3', padding: '20px' }}>
             <h3 style={{ margin: '0 0 14px', fontSize: '1rem', fontWeight: 800, color: '#166534', display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -568,7 +552,7 @@ export const PayrollSettings: React.FC = () => {
                     <td><span className="status-pill eta">{comp.calculationMethod.replace(/_/g, ' ')}</span></td>
                     <td>
                       {comp.calculationMethod === 'FIXED_AMOUNT' && `₹${comp.defaultValue.toLocaleString('en-IN')}`}
-                      {comp.calculationMethod === 'PERCENTAGE' && `${comp.defaultValue}% of ${comp.percentageBase}`}
+                      {comp.calculationMethod === 'PERCENTAGE' && `${comp.defaultValue}% of ${comp.percentageBase || 'CTC'}`}
                       {comp.calculationMethod === 'FORMULA' && `Formula: ${comp.formula}`}
                     </td>
                     <td>
@@ -639,9 +623,17 @@ export const PayrollSettings: React.FC = () => {
                     <td><code>{comp.code}</code></td>
                     <td><span className="status-pill eta">{comp.calculationMethod.replace(/_/g, ' ')}</span></td>
                     <td>
-                      {comp.calculationMethod === 'FIXED_AMOUNT' && `₹${comp.defaultValue.toLocaleString('en-IN')}`}
-                      {comp.calculationMethod === 'PERCENTAGE' && `${comp.defaultValue}% of ${comp.percentageBase}`}
-                      {comp.calculationMethod === 'FORMULA' && `Formula: ${comp.formula}`}
+                      {comp.code === 'EPF' ? (
+                        <span style={{ fontWeight: 600, color: '#0F172A' }}>12% of Base (Basic + DA + Conveyance)</span>
+                      ) : comp.code === 'ESIC' ? (
+                        <span style={{ fontWeight: 600, color: '#0F172A' }}>0.75% of Gross (wage ceiling ₹21,000)</span>
+                      ) : (
+                        <>
+                          {comp.calculationMethod === 'FIXED_AMOUNT' && `₹${comp.defaultValue.toLocaleString('en-IN')}`}
+                          {comp.calculationMethod === 'PERCENTAGE' && `${comp.defaultValue}% of ${comp.percentageBase || 'Gross'}`}
+                          {comp.calculationMethod === 'FORMULA' && `Formula: ${comp.formula}`}
+                        </>
+                      )}
                     </td>
                     <td>
                       {comp.isConfidential ? (
@@ -751,6 +743,7 @@ export const PayrollSettings: React.FC = () => {
                       value={pfConfig.calculationBase}
                       onChange={e => setPfConfig({ ...pfConfig, calculationBase: e.target.value as any })}
                     >
+                      <option value="CUSTOM">PF Base (Basic + DA + Conveyance)</option>
                       <option value="BASIC">Basic Salary</option>
                       <option value="GROSS">Gross Salary</option>
                     </select>

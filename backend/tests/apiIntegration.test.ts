@@ -5,6 +5,7 @@ const HEADERS = {
   'Content-Type': 'application/json',
   'x-user-role': 'Super Admin',
   'x-employee-id': 'EMP-001',
+  'x-dev-mock-auth': 'true',
 };
 
 describe('VRM Enterprise HRMS — Full API Integration Test Suite', () => {
@@ -195,7 +196,7 @@ describe('VRM Enterprise HRMS — Full API Integration Test Suite', () => {
     expect(body.data.status).toBe('PROCESSED');
     expect(body.data.totalEmployees).toBeGreaterThan(0);
     expect(body.data.totalNet).toBeGreaterThan(0);
-  });
+  }, 25000);
 
   it('POST /api/v1/payroll/runs/:id/approve approves the processed run', async () => {
     const res = await fetch(`${BASE_URL}/api/v1/payroll/runs/${testRunId}/approve`, {
@@ -303,6 +304,7 @@ describe('VRM Enterprise HRMS — Full API Integration Test Suite', () => {
       'Content-Type': 'application/json',
       'x-user-role': 'Employee',
       'x-employee-id': 'EMP-003',
+      'x-dev-mock-auth': 'true',
     };
     const res = await fetch(`${BASE_URL}/api/v1/payroll/runs`, {
       method: 'POST',

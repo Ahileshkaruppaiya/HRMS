@@ -19,6 +19,8 @@ import {
   AlertTriangle,
   TrendingUp
 } from 'lucide-react';
+import { ExportDropdown } from '../common/ExportDropdown';
+import { downloadCSV, downloadExcel, downloadPDF } from '../../utils/exportUtils';
 
 interface PerformanceReportsViewProps {
   employees: EmployeePerformanceDetail[];
@@ -158,86 +160,29 @@ export const PerformanceReportsView: React.FC<PerformanceReportsViewProps> = ({
   // Export to CSV
   const handleExportCSV = () => {
     if (reportData.length === 0) return;
-    const headers = Object.keys(reportData[0]);
-    const rows = reportData.map(row => 
-      headers.map(header => `"${(row as any)[header] ?? ''}"`).join(',')
-    );
-    const csvContent = 'data:text/csv;charset=utf-8,' + [headers.join(','), ...rows].join('\n');
-    const encodedUri = encodeURI(csvContent);
-    const link = document.createElement('a');
-    link.setAttribute('href', encodedUri);
-    link.setAttribute('download', `${selectedReport}_${new Date().toISOString().split('T')[0]}.csv`);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-
+    const columns = Object.keys(reportData[0]).map(k => ({ key: k, label: k }));
+    downloadCSV(reportData, `${selectedReport}_${new Date().toISOString().split('T')[0]}`, columns);
     setExportFeedback('CSV Report downloaded successfully!');
     setTimeout(() => setExportFeedback(null), 3500);
   };
 
-  // Export to Excel (using CSV formatted for Excel)
+  // Export to Excel (.xls)
   const handleExportExcel = () => {
     if (reportData.length === 0) return;
-    const headers = Object.keys(reportData[0]);
-    const rows = reportData.map(row => 
-      headers.map(header => `"${(row as any)[header] ?? ''}"`).join('\t')
-    );
-    const excelContent = 'data:application/vnd.ms-excel;charset=utf-8,' + [headers.join('\t'), ...rows].join('\n');
-    const encodedUri = encodeURI(excelContent);
-    const link = document.createElement('a');
-    link.setAttribute('href', encodedUri);
-    link.setAttribute('download', `${selectedReport}_${new Date().toISOString().split('T')[0]}.xls`);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-
-    setExportFeedback('Excel Workbook downloaded successfully!');
+    const columns = Object.keys(reportData[0]).map(k => ({ key: k, label: k }));
+    downloadExcel(reportData, `${selectedReport}_${new Date().toISOString().split('T')[0]}`, columns);
+    setExportFeedback('Excel Workbook (.xls) downloaded successfully!');
     setTimeout(() => setExportFeedback(null), 3500);
   };
 
-  // Export to PDF (Print Preview Window)
+  // Export to PDF
   const handlePrintPDF = () => {
-    const printWindow = window.open('', '_blank');
-    if (!printWindow) return;
-
-    const headers = Object.keys(reportData[0] || {});
+    if (reportData.length === 0) return;
+    const columns = Object.keys(reportData[0] || {}).map(k => ({ key: k, label: k }));
     const title = reportOptions.find(r => r.id === selectedReport)?.label || 'Performance Report';
-
-    const htmlContent = `
-      <html>
-        <head>
-          <title>${title} - VRM HRMS</title>
-          <style>
-            body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; padding: 24px; color: #1E293B; }
-            h1 { font-size: 20px; color: #0E7490; margin-bottom: 4px; }
-            p { font-size: 12px; color: #64748B; margin-bottom: 20px; }
-            table { width: 100%; border-collapse: collapse; font-size: 12px; }
-            th { background-color: #F1F5F9; color: #475569; text-align: left; padding: 8px 12px; border: 1px solid #CBD5E1; }
-            td { padding: 8px 12px; border: 1px solid #E2E8F0; }
-            tr:nth-child(even) { background-color: #F8FAFC; }
-            .header-bar { border-bottom: 2px solid #0E7490; padding-bottom: 10px; margin-bottom: 20px; }
-          </style>
-        </head>
-        <body>
-          <div class="header-bar">
-            <h1>VRM Enterprise HRMS — ${title}</h1>
-            <p>Generated on ${new Date().toLocaleDateString('en-US', { dateStyle: 'full' })} | Confidential</p>
-          </div>
-          <table>
-            <thead>
-              <tr>${headers.map(h => `<th>${h}</th>`).join('')}</tr>
-            </thead>
-            <tbody>
-              ${reportData.map(row => `<tr>${headers.map(h => `<td>${(row as any)[h] ?? ''}</td>`).join('')}</tr>`).join('')}
-            </tbody>
-          </table>
-          <script>window.print();</script>
-        </body>
-      </html>
-    `;
-
-    printWindow.document.write(htmlContent);
-    printWindow.document.close();
+    downloadPDF(reportData, title, `${selectedReport}_${new Date().toISOString().split('T')[0]}`, columns);
+    setExportFeedback('PDF Report generated successfully!');
+    setTimeout(() => setExportFeedback(null), 3500);
   };
 
   return (
@@ -281,68 +226,11 @@ export const PerformanceReportsView: React.FC<PerformanceReportsViewProps> = ({
 
         {/* Export Actions Strip */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-          <button
-            type="button"
-            onClick={handleExportCSV}
-            style={{
-              padding: '8px 14px',
-              backgroundColor: '#FFFFFF',
-              border: '1px solid #CBD5E1',
-              color: '#334155',
-              borderRadius: '10px',
-              fontSize: '13px',
-              fontWeight: 700,
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '6px'
-            }}
-          >
-            <Download size={15} />
-            <span>Export CSV</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={handleExportExcel}
-            style={{
-              padding: '8px 14px',
-              backgroundColor: '#FFFFFF',
-              border: '1px solid #CBD5E1',
-              color: '#15803D',
-              borderRadius: '10px',
-              fontSize: '13px',
-              fontWeight: 700,
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '6px'
-            }}
-          >
-            <Download size={15} />
-            <span>Export Excel</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={handlePrintPDF}
-            style={{
-              padding: '8px 16px',
-              backgroundColor: '#0E7490',
-              border: 'none',
-              color: '#FFFFFF',
-              borderRadius: '10px',
-              fontSize: '13px',
-              fontWeight: 700,
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '6px'
-            }}
-          >
-            <Printer size={15} />
-            <span>Print / PDF</span>
-          </button>
+          <ExportDropdown
+            onExportExcel={handleExportExcel}
+            onExportPDF={handlePrintPDF}
+            onExportCSV={handleExportCSV}
+          />
         </div>
       </div>
 

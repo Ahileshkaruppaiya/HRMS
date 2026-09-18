@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { GoalItem, EmployeePerformanceDetail } from '../../types/performance';
 import { INITIAL_GOALS } from '../../data/performanceInitialData';
+import { formatDateDDMMYYYY } from '../../utils/dateUtils';
 import {
   Target,
   Plus,
@@ -318,8 +319,8 @@ export const GoalsManagementView: React.FC<GoalsManagementViewProps> = ({
                     </td>
 
                     <td style={{ padding: '14px 16px', fontSize: '12px', color: '#475569' }}>
-                      <div>Due: <strong>{g.dueDate}</strong></div>
-                      <span style={{ fontSize: '11px', color: '#94A3B8' }}>Start: {g.startDate}</span>
+                      <div>Due: <strong>{formatDateDDMMYYYY(g.dueDate)}</strong></div>
+                      <span style={{ fontSize: '11px', color: '#94A3B8' }}>Start: {formatDateDDMMYYYY(g.startDate)}</span>
                     </td>
 
                     <td style={{ padding: '14px 16px' }}>

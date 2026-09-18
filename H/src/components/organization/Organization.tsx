@@ -152,11 +152,12 @@ export const Organization: React.FC = () => {
   const desigList = designations;
 
   // Forms
+  const defaultHeadName = employees[0] ? `${employees[0].firstName} ${employees[0].lastName}`.trim() : 'Velmurugan';
   const [deptForm, setDeptForm] = useState({
     name: '',
     code: '',
     description: '',
-    headName: 'Pavithra',
+    headName: defaultHeadName,
     budget: 300000
   });
 
@@ -175,16 +176,19 @@ export const Organization: React.FC = () => {
     e.preventDefault();
     if (!deptForm.name) return;
 
+    const resolvedHeadName = deptForm.headName || defaultHeadName;
+    const matchedEmp = employees.find(emp => `${emp.firstName} ${emp.lastName}`.trim() === resolvedHeadName);
+
     addDepartment({
       name: deptForm.name.trim(),
       code: deptForm.code?.trim() || deptForm.name.substring(0, 3).toUpperCase(),
-      headName: deptForm.headName,
-      headId: 'EMP-001',
+      headName: resolvedHeadName,
+      headId: matchedEmp?.employeeId || employees[0]?.employeeId || 'EMP-000',
       budget: Number(deptForm.budget) || 300000
     });
 
     setShowAddDeptModal(false);
-    setDeptForm({ name: '', code: '', description: '', headName: 'Pavithra', budget: 300000 });
+    setDeptForm({ name: '', code: '', description: '', headName: defaultHeadName, budget: 300000 });
     triggerToast(`Added ${deptForm.name.trim()} Department!`);
   };
 

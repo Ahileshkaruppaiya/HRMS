@@ -83,6 +83,7 @@ export class PayrollService {
       hraPercentage: structure.hraPercentage,
       payrollMonth: input.payroll_month,
       payrollYear: input.payroll_year,
+      withPf: structure.withPf !== undefined ? structure.withPf : (employee.withPf !== undefined ? employee.withPf : true),
       settings,
       attendance: {
         workingDays,
@@ -162,6 +163,7 @@ export class PayrollService {
         hraPercentage: structure.hraPercentage,
         payrollMonth: run.payrollMonth,
         payrollYear: run.payrollYear,
+        withPf: structure.withPf !== undefined ? structure.withPf : (emp.withPf !== undefined ? emp.withPf : true),
         settings,
         attendance: {
           workingDays,

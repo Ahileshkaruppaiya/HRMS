@@ -477,15 +477,15 @@ export const GPSGeofenceSettings: React.FC = () => {
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
-                  backgroundColor: '#1D64F2',
+                  backgroundColor: '#0E7490',
                   color: '#FFFFFF',
                   border: 'none',
                   borderRadius: '0 8px 8px 0',
                   cursor: 'pointer',
                   transition: 'background-color 0.15s ease'
                 }}
-                onMouseEnter={e => e.currentTarget.style.backgroundColor = '#1550C7'}
-                onMouseLeave={e => e.currentTarget.style.backgroundColor = '#1D64F2'}
+                onMouseEnter={e => e.currentTarget.style.backgroundColor = '#0891B2'}
+                onMouseLeave={e => e.currentTarget.style.backgroundColor = '#0E7490'}
               >
                 <ArrowRight size={18} />
               </button>
@@ -767,18 +767,18 @@ export const GPSGeofenceSettings: React.FC = () => {
             onClick={handleConfirmSave}
             style={{
               padding: '10px 42px',
-              backgroundColor: '#1D64F2',
+              backgroundColor: '#0E7490',
               color: '#FFFFFF',
               borderRadius: '8px',
               border: 'none',
               fontWeight: 700,
               fontSize: '0.94rem',
               cursor: 'pointer',
-              boxShadow: '0 2px 8px rgba(29, 100, 242, 0.3)',
+              boxShadow: '0 2px 8px rgba(14, 116, 144, 0.25)',
               transition: 'background-color 0.15s ease'
             }}
-            onMouseEnter={e => e.currentTarget.style.backgroundColor = '#1550C7'}
-            onMouseLeave={e => e.currentTarget.style.backgroundColor = '#1D64F2'}
+            onMouseEnter={e => e.currentTarget.style.backgroundColor = '#0891B2'}
+            onMouseLeave={e => e.currentTarget.style.backgroundColor = '#0E7490'}
           >
             Confirm
           </button>

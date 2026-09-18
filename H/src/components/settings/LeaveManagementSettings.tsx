@@ -1,8 +1,7 @@
 import React, { useState } from 'react';
 import { useHRMS } from '../../context/HRMSContext';
-import { MasterLeavePolicy, LeaveApprovalFlow, LeaveDeductionRuleType, DeductionVisibility, LeaveTypeConfig } from '../../types/settings';
+import { MasterLeavePolicy, LeaveTypeConfig } from '../../types/settings';
 import { SandwichCondition } from '../../types/sandwichLeave';
-import { validateFormula } from '../../services/policyEngine';
 import { 
   CalendarDays, 
   Plus, 
@@ -30,6 +29,8 @@ export const LeaveManagementSettings: React.FC = () => {
     updateMasterLeavePolicy, 
     archiveMasterLeavePolicy,
     toggleMasterLeavePolicyStatus,
+    deleteMasterLeavePolicy,
+    resetMasterLeavePoliciesToDefault,
     sandwichPolicies,
     updateSandwichPolicy,
     createSandwichPolicy,
@@ -45,143 +46,149 @@ export const LeaveManagementSettings: React.FC = () => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingPolicy, setEditingPolicy] = useState<MasterLeavePolicy | null>(null);
 
-  // Form State
+  // Form State: strictly the 4 requested fields
   const [form, setForm] = useState<{
     policyName: string;
-    description: string;
-    effectiveDate: string;
-    status: 'Active' | 'Inactive';
-    leaveTypes: LeaveTypeConfig[];
-    monthlyFreeUnpaidLeaves: number;
-    deductionRuleType: LeaveDeductionRuleType;
-    fixedDeductionAmount: number;
-    dailySalaryMultiplier: number;
-    percentageOfDailySalary: number;
-    customFormula: string;
-    approvalFlow: LeaveApprovalFlow;
-    deductionVisibility: DeductionVisibility;
-    genericCategoryLabel: string;
+    frequency: 'MONTH' | 'YEAR';
+    quotaDays: number;
+    leaveType: string;
+    customLeaveType: string;
+    isPaid: boolean;
   }>({
     policyName: '',
-    description: '',
-    effectiveDate: '2026-01-01',
-    status: 'Active',
-    leaveTypes: [],
-    monthlyFreeUnpaidLeaves: 1,
-    deductionRuleType: 'DAILY_SALARY',
-    fixedDeductionAmount: 1000,
-    dailySalaryMultiplier: 1,
-    percentageOfDailySalary: 100,
-    customFormula: '(DAILY_SALARY * UNPAID_DAYS)',
-    approvalFlow: 'EMPLOYEE_HR',
-    deductionVisibility: 'GENERIC',
-    genericCategoryLabel: 'OTHERS'
+    frequency: 'MONTH',
+    quotaDays: 1,
+    leaveType: 'Casual Leave (CL)',
+    customLeaveType: '',
+    isPaid: true
   });
 
-  const [formulaValidation, setFormulaValidation] = useState<{ isValid: boolean; error?: string; sampleResult?: number }>({ isValid: true });
-  const [newLeaveTypeName, setNewLeaveTypeName] = useState('');
-  const [newLeaveTypeQuota, setNewLeaveTypeQuota] = useState(12);
-  const [newLeaveTypeIsPaid, setNewLeaveTypeIsPaid] = useState(true);
+  // Auto-clean any legacy obsolete policy to ensure clean 4-field format
+  React.useEffect(() => {
+    const hasLegacy = masterLeavePolicies.some(p =>
+      p.id === 'LP-MASTER-01' ||
+      p.policyName.toLowerCase().includes('corporate master leave') ||
+      p.policyName.includes('Confirmed Employees - Casual Leave Policy')
+    );
+    if (hasLegacy) {
+      resetMasterLeavePoliciesToDefault();
+    }
+  }, [masterLeavePolicies, resetMasterLeavePoliciesToDefault]);
 
   const openAddModal = () => {
     setEditingPolicy(null);
     setForm({
-      policyName: '',
-      description: '',
-      effectiveDate: '2026-09-01',
-      status: 'Active',
-      leaveTypes: [
-        { id: 'lt-cl', name: 'Casual Leave', isPaid: true, quotaPerYear: 12, description: 'Short personal leave', color: '#0E7490' },
-        { id: 'lt-sl', name: 'Sick Leave', isPaid: true, quotaPerYear: 10, description: 'Medical recovery leave', color: '#22C55E' },
-        { id: 'lt-pl', name: 'Paid Leave', isPaid: true, quotaPerYear: 15, description: 'Annual privileged leave', color: '#3B82F6' },
-        { id: 'lt-ul', name: 'Unpaid Leave', isPaid: false, quotaPerYear: 12, description: 'Loss of pay leave beyond paid quotas', color: '#EF4444' },
-        { id: 'lt-el', name: 'Earned Leave', isPaid: true, quotaPerYear: 18, description: 'Accrued long leave', color: '#8B5CF6' },
-        { id: 'lt-ml', name: 'Maternity Leave', isPaid: true, quotaPerYear: 180, description: 'Statutory maternity leave', color: '#EC4899' },
-        { id: 'lt-pt', name: 'Paternity Leave', isPaid: true, quotaPerYear: 15, description: 'New father support leave', color: '#14B8A6' },
-        { id: 'lt-co', name: 'Compensatory Leave', isPaid: true, quotaPerYear: 12, description: 'Comp-off for weekend project work', color: '#F59E0B' }
-      ],
-      monthlyFreeUnpaidLeaves: 1,
-      deductionRuleType: 'DAILY_SALARY',
-      fixedDeductionAmount: 1000,
-      dailySalaryMultiplier: 1,
-      percentageOfDailySalary: 100,
-      customFormula: '(DAILY_SALARY * UNPAID_DAYS)',
-      approvalFlow: 'EMPLOYEE_HR',
-      deductionVisibility: 'GENERIC',
-      genericCategoryLabel: 'OTHERS'
+      policyName: 'Casual Leave Policy',
+      frequency: 'MONTH',
+      quotaDays: 1,
+      leaveType: 'Casual Leave (CL)',
+      customLeaveType: '',
+      isPaid: true
     });
-    setFormulaValidation({ isValid: true });
     setIsModalOpen(true);
   };
 
   const openEditModal = (p: MasterLeavePolicy) => {
     setEditingPolicy(p);
+    const firstType = p.leaveTypes?.[0];
+    const leaveTypeName = firstType?.name || 'Casual Leave (CL)';
+    const isPaid = firstType !== undefined ? firstType.isPaid : true;
+
+    const standardTypes = [
+      'Casual Leave (CL)',
+      'Sick Leave (SL)',
+      'Earned Leave (EL)',
+      'Privilege Leave (PL)',
+      'Compensatory Off (Comp-Off)',
+      'Maternity Leave',
+      'Paternity Leave',
+      'Bereavement Leave',
+      'Loss of Pay (LOP)'
+    ];
+
+    const matchedStandard = standardTypes.find(t => 
+      t.toLowerCase() === leaveTypeName.toLowerCase() || 
+      t.toLowerCase().startsWith(leaveTypeName.toLowerCase()) ||
+      leaveTypeName.toLowerCase().startsWith(t.split(' ')[0].toLowerCase())
+    );
+
+    let frequency: 'MONTH' | 'YEAR' = 'MONTH';
+    let quotaDays = 1;
+
+    if (p.monthlyFreeUnpaidLeaves && p.monthlyFreeUnpaidLeaves > 0) {
+      frequency = 'MONTH';
+      quotaDays = p.monthlyFreeUnpaidLeaves;
+    } else if (firstType) {
+      if (firstType.quotaPerYear % 12 === 0 && firstType.quotaPerYear <= 24) {
+        frequency = 'MONTH';
+        quotaDays = firstType.quotaPerYear / 12;
+      } else {
+        frequency = 'YEAR';
+        quotaDays = firstType.quotaPerYear;
+      }
+    }
+
     setForm({
       policyName: p.policyName,
-      description: p.description,
-      effectiveDate: p.effectiveDate,
-      status: p.status === 'Archived' ? 'Inactive' : p.status,
-      leaveTypes: p.leaveTypes || [],
-      monthlyFreeUnpaidLeaves: p.monthlyFreeUnpaidLeaves,
-      deductionRuleType: p.deductionRuleType,
-      fixedDeductionAmount: p.fixedDeductionAmount || 1000,
-      dailySalaryMultiplier: p.dailySalaryMultiplier || 1,
-      percentageOfDailySalary: p.percentageOfDailySalary || 100,
-      customFormula: p.customFormula || '(DAILY_SALARY * UNPAID_DAYS)',
-      approvalFlow: p.approvalFlow,
-      deductionVisibility: p.deductionVisibility,
-      genericCategoryLabel: p.genericCategoryLabel || 'OTHERS'
+      frequency,
+      quotaDays,
+      leaveType: matchedStandard || (leaveTypeName ? 'CUSTOM' : 'Casual Leave (CL)'),
+      customLeaveType: matchedStandard ? '' : leaveTypeName,
+      isPaid
     });
-    setFormulaValidation(validateFormula(p.customFormula || '(DAILY_SALARY * UNPAID_DAYS)'));
     setIsModalOpen(true);
-  };
-
-  const handleFormulaChange = (val: string) => {
-    setForm(prev => ({ ...prev, customFormula: val }));
-    setFormulaValidation(validateFormula(val));
-  };
-
-  const handleAddCustomLeaveType = () => {
-    if (!newLeaveTypeName.trim()) return;
-    const newType: LeaveTypeConfig = {
-      id: `lt-${Date.now()}`,
-      name: newLeaveTypeName.trim(),
-      isPaid: newLeaveTypeIsPaid,
-      quotaPerYear: Number(newLeaveTypeQuota) || 12,
-      description: 'Custom defined leave quota',
-      color: '#0E7490'
-    };
-    setForm(prev => ({ ...prev, leaveTypes: [...prev.leaveTypes, newType] }));
-    setNewLeaveTypeName('');
-    setNewLeaveTypeQuota(12);
-  };
-
-  const handleRemoveLeaveType = (id: string) => {
-    setForm(prev => ({ ...prev, leaveTypes: prev.leaveTypes.filter(t => t.id !== id) }));
   };
 
   const handleSave = (e: React.FormEvent) => {
     e.preventDefault();
     if (!form.policyName.trim()) return;
 
+    const finalLeaveTypeName = (form.leaveType === 'CUSTOM' ? form.customLeaveType : form.leaveType).trim() || 'Casual Leave';
+    const quotaPerYear = form.frequency === 'MONTH' ? Number(form.quotaDays) * 12 : Number(form.quotaDays);
+    const monthlyDays = form.frequency === 'MONTH' ? Number(form.quotaDays) : Math.max(1, Math.round(Number(form.quotaDays) / 12));
+
+    const leaveTypes: LeaveTypeConfig[] = [
+      {
+        id: editingPolicy?.leaveTypes?.[0]?.id || `lt-${Date.now()}`,
+        name: finalLeaveTypeName,
+        isPaid: form.isPaid,
+        quotaPerYear: quotaPerYear,
+        description: `${finalLeaveTypeName} (${form.isPaid ? 'Paid' : 'Unpaid'}) - ${form.quotaDays} day(s) per ${form.frequency === 'MONTH' ? 'month' : 'year'}`,
+        color: form.isPaid ? '#0E7490' : '#EF4444'
+      }
+    ];
+
+    // If it's a paid policy, ensure there is also an Unpaid Leave fallback type
+    if (form.isPaid) {
+      leaveTypes.push({
+        id: editingPolicy?.leaveTypes?.[1]?.id || `lt-ul-${Date.now()}`,
+        name: 'Unpaid Leave (LWP)',
+        isPaid: false,
+        quotaPerYear: 12,
+        description: 'Loss of pay leave beyond monthly paid quota',
+        color: '#EF4444'
+      });
+    }
+
     const payload = {
       policyName: form.policyName.trim(),
-      description: form.description.trim(),
+      description: `${finalLeaveTypeName}: ${form.quotaDays} day(s) per ${form.frequency === 'MONTH' ? 'month' : 'year'} (${form.isPaid ? 'Paid' : 'Unpaid'}). Additional unpaid leaves incur 1 day salary deduction.`,
       applicableEmployees: 'ALL' as const,
       applicableDepartments: 'ALL' as const,
       applicableBranches: 'ALL' as const,
-      effectiveDate: form.effectiveDate,
-      status: form.status,
-      leaveTypes: form.leaveTypes,
-      monthlyFreeUnpaidLeaves: Number(form.monthlyFreeUnpaidLeaves) || 0,
-      deductionRuleType: form.deductionRuleType,
-      fixedDeductionAmount: Number(form.fixedDeductionAmount) || 0,
-      dailySalaryMultiplier: Number(form.dailySalaryMultiplier) || 1,
-      percentageOfDailySalary: Number(form.percentageOfDailySalary) || 100,
-      customFormula: form.customFormula,
-      approvalFlow: form.approvalFlow,
-      deductionVisibility: form.deductionVisibility,
-      genericCategoryLabel: form.genericCategoryLabel || 'OTHERS'
+      applicableEmploymentType: editingPolicy?.applicableEmploymentType || ('Confirmed' as const),
+      effectiveDate: editingPolicy?.effectiveDate || '2026-01-01',
+      status: editingPolicy?.status === 'Archived' ? ('Inactive' as const) : (editingPolicy?.status || ('Active' as const)),
+      leaveTypes,
+      monthlyFreeUnpaidLeaves: form.isPaid ? monthlyDays : 0,
+      deductionRuleType: editingPolicy?.deductionRuleType || ('DAILY_SALARY' as const),
+      fixedDeductionAmount: editingPolicy?.fixedDeductionAmount || 1000,
+      dailySalaryMultiplier: editingPolicy?.dailySalaryMultiplier || 1,
+      percentageOfDailySalary: editingPolicy?.percentageOfDailySalary || 100,
+      customFormula: editingPolicy?.customFormula || '(DAILY_SALARY * UNPAID_DAYS)',
+      approvalFlow: editingPolicy?.approvalFlow || ('EMPLOYEE_HR' as const),
+      deductionVisibility: editingPolicy?.deductionVisibility || ('GENERIC' as const),
+      genericCategoryLabel: editingPolicy?.genericCategoryLabel || 'OTHERS'
     };
 
     if (editingPolicy) {
@@ -359,13 +366,28 @@ export const LeaveManagementSettings: React.FC = () => {
         </div>
 
         {activeSubTab === 'policies' && isPrivileged && (
-          <button
-            className="btn btn-primary btn-sm"
-            onClick={openAddModal}
-            style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
-          >
-            <Plus size={16} /> Create Leave Policy
-          </button>
+          <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+            <button
+              type="button"
+              className="btn btn-secondary btn-sm"
+              onClick={() => {
+                if (window.confirm('Reset leave policies to standard Company defaults (Confirmed 1 Day/Month Paid & Provisional 1 Paid/3 Months)?')) {
+                  resetMasterLeavePoliciesToDefault();
+                }
+              }}
+              style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
+              title="Reset to Company Standards"
+            >
+              <Layers size={14} /> Reset Standard Policies
+            </button>
+            <button
+              className="btn btn-primary btn-sm"
+              onClick={() => openAddModal()}
+              style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
+            >
+              <Plus size={16} /> Create Leave Policy
+            </button>
+          </div>
         )}
       </div>
 
@@ -560,10 +582,13 @@ export const LeaveManagementSettings: React.FC = () => {
       ) : (
         <>
           {/* Policies List */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(360px, 1fr))', gap: '16px' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(380px, 1fr))', gap: '16px' }}>
         {masterLeavePolicies.map(policy => {
           const isActive = policy.status === 'Active';
           const isArchived = policy.status === 'Archived';
+          const isProvisional = policy.applicableEmploymentType === 'Provisional' || 
+            policy.policyName.toLowerCase().includes('provisional') || 
+            policy.policyName.toLowerCase().includes('probation');
 
           return (
             <div
@@ -583,15 +608,26 @@ export const LeaveManagementSettings: React.FC = () => {
               <div>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '10px' }}>
                   <div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
                       <h4 style={{ margin: 0, fontSize: '1.05rem', fontWeight: 800, color: '#0F172A' }}>
                         {policy.policyName}
                       </h4>
                       <span style={{ fontSize: '0.72rem', color: '#64748B', fontWeight: 600 }}>
                         v{policy.version}
                       </span>
+                      <span style={{
+                        fontSize: '0.72rem',
+                        fontWeight: 700,
+                        padding: '2px 8px',
+                        borderRadius: '999px',
+                        backgroundColor: isProvisional ? '#FEF3C7' : '#ECFEFF',
+                        color: isProvisional ? '#B45309' : '#0E7490',
+                        border: `1px solid ${isProvisional ? '#FDE68A' : '#A5F3FC'}`
+                      }}>
+                        {isProvisional ? 'Provisional (First 3 Months)' : 'Confirmed Staff'}
+                      </span>
                     </div>
-                    <p style={{ margin: '4px 0 0', fontSize: '0.8rem', color: '#64748B' }}>
+                    <p style={{ margin: '6px 0 0', fontSize: '0.8rem', color: '#64748B', lineHeight: '1.4' }}>
                       {policy.description}
                     </p>
                   </div>
@@ -601,74 +637,67 @@ export const LeaveManagementSettings: React.FC = () => {
                   </span>
                 </div>
 
-                {/* Free Leave Quota & Deduction Formula */}
-                <div style={{
-                  backgroundColor: '#F8FAFC',
-                  padding: '12px',
-                  borderRadius: '12px',
-                  fontSize: '0.8rem',
-                  display: 'grid',
-                  gridTemplateColumns: '1fr 1fr',
-                  gap: '8px',
-                  marginBottom: '14px'
-                }}>
-                  <div>
-                    <span style={{ color: '#64748B' }}>Monthly Free Unpaid Leave:</span>
-                    <div style={{ fontWeight: 700, color: '#0E7490' }}>
-                      {policy.monthlyFreeUnpaidLeaves} Day(s) Free
-                    </div>
-                  </div>
+                {/* 4 Core Fields Info Card */}
+                {(() => {
+                  const mainType = (policy.leaveTypes || [])[0];
+                  const isPaid = mainType !== undefined ? mainType.isPaid : true;
+                  const isMonthly = Boolean(policy.monthlyFreeUnpaidLeaves && policy.monthlyFreeUnpaidLeaves > 0);
+                  const quotaDisplay = isMonthly
+                    ? `${policy.monthlyFreeUnpaidLeaves} Day / Month (${(policy.monthlyFreeUnpaidLeaves || 1) * 12}d/yr)`
+                    : `${mainType?.quotaPerYear || 1} Day(s) / Year`;
 
-                  <div>
-                    <span style={{ color: '#64748B' }}>Subsequent Deductions:</span>
-                    <div style={{ fontWeight: 700, color: '#1E293B' }}>
-                      {policy.deductionRuleType === 'DAILY_SALARY' && `${policy.dailySalaryMultiplier || 1}x Daily Salary`}
-                      {policy.deductionRuleType === 'FIXED_AMOUNT' && `₹${policy.fixedDeductionAmount}/day`}
-                      {policy.deductionRuleType === 'PERCENTAGE' && `${policy.percentageOfDailySalary}% Daily Salary`}
-                      {policy.deductionRuleType === 'CUSTOM_FORMULA' && 'Custom Formula'}
-                    </div>
-                  </div>
+                  return (
+                    <div style={{
+                      backgroundColor: '#F8FAFC',
+                      padding: '14px 16px',
+                      borderRadius: '12px',
+                      fontSize: '0.84rem',
+                      display: 'grid',
+                      gridTemplateColumns: 'repeat(3, 1fr)',
+                      gap: '12px',
+                      marginBottom: '14px',
+                      border: '1px solid #F1F5F9'
+                    }}>
+                      <div>
+                        <span style={{ color: '#64748B', fontSize: '0.74rem', fontWeight: 600, display: 'block', textTransform: 'uppercase' }}>
+                          Year / Month:
+                        </span>
+                        <div style={{ fontWeight: 700, color: '#0E7490', marginTop: '3px' }}>
+                          {quotaDisplay}
+                        </div>
+                      </div>
 
-                  <div>
-                    <span style={{ color: '#64748B' }}>Approval Flow:</span>
-                    <div style={{ fontWeight: 700, color: '#1E293B' }}>
-                      {policy.approvalFlow === 'EMPLOYEE_HR_CEO' && 'Emp → HR → CEO'}
-                      {policy.approvalFlow === 'EMPLOYEE_MANAGER_HR' && 'Emp → Manager → HR'}
-                      {policy.approvalFlow === 'EMPLOYEE_HR' && 'Emp → HR'}
-                    </div>
-                  </div>
+                      <div>
+                        <span style={{ color: '#64748B', fontSize: '0.74rem', fontWeight: 600, display: 'block', textTransform: 'uppercase' }}>
+                          Leave Type:
+                        </span>
+                        <div style={{ fontWeight: 700, color: '#1E293B', marginTop: '3px' }}>
+                          {mainType?.name || 'Casual Leave (CL)'}
+                        </div>
+                      </div>
 
-                  <div>
-                    <span style={{ color: '#64748B' }}>Employee Payslip Privacy:</span>
-                    <div style={{ fontWeight: 700, color: '#1E293B' }}>
-                      {policy.deductionVisibility === 'GENERIC' ? `Generic (${policy.genericCategoryLabel})` : 'Detailed Breakdown'}
+                      <div>
+                        <span style={{ color: '#64748B', fontSize: '0.74rem', fontWeight: 600, display: 'block', textTransform: 'uppercase' }}>
+                          Paid or Unpaid:
+                        </span>
+                        <div style={{ marginTop: '3px' }}>
+                          <span style={{
+                            fontSize: '0.74rem',
+                            fontWeight: 700,
+                            padding: '3px 10px',
+                            borderRadius: '6px',
+                            backgroundColor: isPaid ? '#ECFEFF' : '#FEF2F2',
+                            color: isPaid ? '#0E7490' : '#DC2626',
+                            border: `1px solid ${isPaid ? '#CFFAFE' : '#FECACA'}`,
+                            display: 'inline-block'
+                          }}>
+                            {isPaid ? 'Paid' : 'Unpaid'}
+                          </span>
+                        </div>
+                      </div>
                     </div>
-                  </div>
-                </div>
-
-                {/* Supported Leave Types Badges */}
-                <div style={{ borderTop: '1px solid #F1F5F9', paddingTop: '10px', marginBottom: '14px' }}>
-                  <span style={{ fontSize: '0.74rem', fontWeight: 700, color: '#64748B', textTransform: 'uppercase' }}>
-                    Available Quotas ({(policy.leaveTypes || []).length} Types):
-                  </span>
-                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginTop: '6px' }}>
-                    {(policy.leaveTypes || []).map(t => (
-                      <span
-                        key={t.id}
-                        style={{
-                          fontSize: '0.74rem',
-                          fontWeight: 600,
-                          backgroundColor: t.isPaid ? '#ECFEFF' : '#FEE2E2',
-                          color: t.isPaid ? '#0E7490' : '#DC2626',
-                          padding: '2px 8px',
-                          borderRadius: '6px'
-                        }}
-                      >
-                        {t.name} ({t.quotaPerYear}d)
-                      </span>
-                    ))}
-                  </div>
-                </div>
+                  );
+                })()}
               </div>
 
               {/* Actions */}
@@ -678,8 +707,9 @@ export const LeaveManagementSettings: React.FC = () => {
                     <button
                       className="btn btn-secondary btn-sm"
                       onClick={() => openEditModal(policy)}
+                      title="Edit Policy"
                     >
-                      <Edit3 size={14} /> Edit Policy
+                      <Edit3 size={14} />
                     </button>
                     <button
                       className="btn btn-secondary btn-sm"
@@ -690,20 +720,34 @@ export const LeaveManagementSettings: React.FC = () => {
                     </button>
                   </div>
 
-                  {!isArchived && (
+                  <div style={{ display: 'flex', gap: '6px' }}>
+                    {!isArchived && (
+                      <button
+                        className="btn btn-secondary btn-sm"
+                        style={{ color: '#F59E0B' }}
+                        onClick={() => {
+                          if (window.confirm(`Archive "${policy.policyName}"? Historical payroll runs will continue using past versions.`)) {
+                            archiveMasterLeavePolicy(policy.id);
+                          }
+                        }}
+                        title="Archive Policy"
+                      >
+                        <Archive size={14} />
+                      </button>
+                    )}
                     <button
                       className="btn btn-secondary btn-sm"
                       style={{ color: '#EF4444' }}
                       onClick={() => {
-                        if (window.confirm(`Archive "${policy.policyName}"? Historical payroll runs will continue using their past versions.`)) {
-                          archiveMasterLeavePolicy(policy.id);
+                        if (window.confirm(`Permanently delete "${policy.policyName}"?`)) {
+                          deleteMasterLeavePolicy(policy.id);
                         }
                       }}
-                      title="Archive Policy"
+                      title="Permanently Delete Policy"
                     >
-                      <Archive size={14} />
+                      <Trash2 size={14} />
                     </button>
-                  )}
+                  </div>
                 </div>
               )}
             </div>
@@ -711,273 +755,294 @@ export const LeaveManagementSettings: React.FC = () => {
         })}
       </div>
 
-      {/* CREATE / EDIT MODAL */}
+      {/* CREATE / EDIT MODAL - STREAMLINED TO 4 ESSENTIAL FIELDS */}
       {isModalOpen && (
         <div className="modal-overlay">
-          <div className="modal-content" style={{ maxWidth: '750px', maxHeight: '90vh', overflowY: 'auto' }}>
-            <div className="modal-header">
-              <h3>{editingPolicy ? `Edit Policy: ${editingPolicy.policyName}` : 'Create Master Leave Policy'}</h3>
-              <button className="close-btn" title="Close" onClick={() => setIsModalOpen(false)}>
-                <X size={22} />
+          <div
+            className="modal-content"
+            style={{
+              maxWidth: '520px',
+              width: '100%',
+              borderRadius: '16px',
+              overflow: 'hidden',
+              boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.04)'
+            }}
+          >
+            <div className="modal-header" style={{ borderBottom: '1px solid #E7ECF3', padding: '18px 24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <h3 style={{ margin: 0, fontSize: '1.15rem', fontWeight: 800, color: '#0F172A' }}>
+                {editingPolicy ? 'Edit Leave Policy' : 'Create Leave Policy'}
+              </h3>
+              <button
+                className="close-btn"
+                title="Close"
+                onClick={() => setIsModalOpen(false)}
+                style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#64748B', display: 'flex', alignItems: 'center', padding: '4px' }}
+              >
+                <X size={20} />
               </button>
             </div>
 
             <form onSubmit={handleSave}>
-              <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '12px' }}>
-                  <div style={{ gridColumn: '1 / -1' }}>
-                    <label className="form-label">Policy Name</label>
-                    <input
-                      type="text"
-                      className="form-control"
-                      value={form.policyName}
-                      onChange={e => setForm({ ...form, policyName: e.target.value })}
-                      placeholder="e.g. Corporate Master Leave & Unpaid Policy"
-                      required
-                    />
-                  </div>
-
-                  <div style={{ gridColumn: '1 / -1' }}>
-                    <label className="form-label">Description</label>
-                    <textarea
-                      className="form-control"
-                      rows={2}
-                      value={form.description}
-                      onChange={e => setForm({ ...form, description: e.target.value })}
-                      placeholder="Brief summary of policy coverage..."
-                    />
-                  </div>
-
-                  <div>
-                    <label className="form-label">Effective Date</label>
-                    <input
-                      type="date"
-                      className="form-control"
-                      value={form.effectiveDate}
-                      onChange={e => setForm({ ...form, effectiveDate: e.target.value })}
-                      required
-                    />
-                  </div>
-
-                  <div>
-                    <label className="form-label">Policy Status</label>
-                    <select
-                      className="form-control"
-                      value={form.status}
-                      onChange={e => setForm({ ...form, status: e.target.value as any })}
-                    >
-                      <option value="Active">Active</option>
-                      <option value="Inactive">Inactive</option>
-                    </select>
-                  </div>
+              <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: '18px', padding: '24px' }}>
+                {/* 1. Policy Name */}
+                <div>
+                  <label style={{ display: 'block', marginBottom: '6px', fontSize: '0.85rem', fontWeight: 700, color: '#1E293B' }}>
+                    Policy Name <span style={{ color: '#EF4444' }}>*</span>
+                  </label>
+                  <input
+                    type="text"
+                    className="form-control"
+                    value={form.policyName}
+                    onChange={e => setForm(prev => ({ ...prev, policyName: e.target.value }))}
+                    placeholder="e.g. Casual Leave Policy"
+                    required
+                    style={{
+                      width: '100%',
+                      padding: '10px 14px',
+                      borderRadius: '10px',
+                      border: '1px solid #E2E8F0',
+                      fontSize: '0.9rem',
+                      outline: 'none',
+                      boxSizing: 'border-box'
+                    }}
+                  />
                 </div>
 
-                {/* Section B: Custom Unpaid Leave Rule Builder */}
-                <div style={{ borderTop: '1px solid #E2E8F0', paddingTop: '12px' }}>
-                  <h4 style={{ margin: '0 0 10px', fontSize: '0.92rem', fontWeight: 800, color: '#0F172A' }}>
-                    Custom Leave Deduction Rule Builder
-                  </h4>
-
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '12px' }}>
-                    <div>
-                      <label className="form-label">Monthly Free / Allowed Unpaid Leaves</label>
+                {/* 2. Year / Month */}
+                <div>
+                  <label style={{ display: 'block', marginBottom: '6px', fontSize: '0.85rem', fontWeight: 700, color: '#1E293B' }}>
+                    Year / Month <span style={{ color: '#EF4444' }}>*</span>
+                  </label>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+                    <div style={{ position: 'relative' }}>
                       <input
                         type="number"
                         className="form-control"
                         min={0}
-                        max={10}
-                        value={form.monthlyFreeUnpaidLeaves}
-                        onChange={e => setForm({ ...form, monthlyFreeUnpaidLeaves: parseInt(e.target.value) || 0 })}
+                        step={0.5}
+                        value={form.quotaDays}
+                        onChange={e => setForm(prev => ({ ...prev, quotaDays: parseFloat(e.target.value) || 0 }))}
+                        placeholder="e.g. 1"
                         required
+                        style={{
+                          width: '100%',
+                          padding: '10px 48px 10px 14px',
+                          borderRadius: '10px',
+                          border: '1px solid #E2E8F0',
+                          fontSize: '0.9rem',
+                          outline: 'none',
+                          boxSizing: 'border-box'
+                        }}
                       />
-                      <span style={{ fontSize: '0.72rem', color: '#64748B' }}>
-                        e.g. 1 = First unpaid leave incurs no salary penalty.
+                      <span style={{
+                        position: 'absolute',
+                        right: '12px',
+                        top: '50%',
+                        transform: 'translateY(-50%)',
+                        fontSize: '0.8rem',
+                        color: '#64748B',
+                        fontWeight: 600,
+                        pointerEvents: 'none'
+                      }}>
+                        Days
                       </span>
                     </div>
 
-                    <div>
-                      <label className="form-label">Excess Leave Deduction Rule Type</label>
-                      <select
-                        className="form-control"
-                        value={form.deductionRuleType}
-                        onChange={e => setForm({ ...form, deductionRuleType: e.target.value as LeaveDeductionRuleType })}
-                      >
-                        <option value="DAILY_SALARY">Daily Salary (1 Day Salary per Excess Day)</option>
-                        <option value="FIXED_AMOUNT">Fixed Amount (e.g. ₹1,000 per Day)</option>
-                        <option value="PERCENTAGE">Percentage of Daily Salary</option>
-                        <option value="CUSTOM_FORMULA">Custom Formula (DAILY_SALARY * UNPAID_DAYS)</option>
-                      </select>
-                    </div>
+                    <select
+                      className="form-control"
+                      value={form.frequency}
+                      onChange={e => setForm(prev => ({ ...prev, frequency: e.target.value as 'MONTH' | 'YEAR' }))}
+                      style={{
+                        width: '100%',
+                        padding: '10px 14px',
+                        borderRadius: '10px',
+                        border: '1px solid #E2E8F0',
+                        fontSize: '0.9rem',
+                        fontWeight: 600,
+                        color: '#1E293B',
+                        outline: 'none',
+                        backgroundColor: '#FFFFFF',
+                        boxSizing: 'border-box'
+                      }}
+                    >
+                      <option value="MONTH">Per Month</option>
+                      <option value="YEAR">Per Year</option>
+                    </select>
                   </div>
-
-                  {form.deductionRuleType === 'DAILY_SALARY' && (
-                    <div>
-                      <label className="form-label">Daily Salary Multiplier</label>
-                      <input
-                        type="number"
-                        className="form-control"
-                        step="0.5"
-                        value={form.dailySalaryMultiplier}
-                        onChange={e => setForm({ ...form, dailySalaryMultiplier: parseFloat(e.target.value) || 1 })}
-                      />
-                    </div>
-                  )}
-
-                  {form.deductionRuleType === 'FIXED_AMOUNT' && (
-                    <div>
-                      <label className="form-label">Fixed Amount Per Excess Day (₹)</label>
-                      <input
-                        type="number"
-                        className="form-control"
-                        value={form.fixedDeductionAmount}
-                        onChange={e => setForm({ ...form, fixedDeductionAmount: parseFloat(e.target.value) || 0 })}
-                      />
-                    </div>
-                  )}
-
-                  {form.deductionRuleType === 'CUSTOM_FORMULA' && (
-                    <div style={{ backgroundColor: '#F8FAFC', padding: '12px', borderRadius: '10px' }}>
-                      <label className="form-label">Custom Formula</label>
-                      <input
-                        type="text"
-                        className="form-control"
-                        value={form.customFormula}
-                        onChange={e => handleFormulaChange(e.target.value)}
-                        placeholder="(DAILY_SALARY * UNPAID_DAYS)"
-                      />
-                      <div style={{ fontSize: '0.74rem', color: '#64748B', marginTop: '4px' }}>
-                        Allowed variables: <code>DAILY_SALARY</code>, <code>UNPAID_DAYS</code>, <code>BASIC</code>
-                      </div>
-                      {formulaValidation.isValid ? (
-                        <div style={{ marginTop: '6px', color: '#16A34A', fontSize: '0.78rem', fontWeight: 600 }}>
-                          ✓ Valid formula!
-                        </div>
-                      ) : (
-                        <div style={{ marginTop: '6px', color: '#DC2626', fontSize: '0.78rem', fontWeight: 600 }}>
-                          ⚠ {formulaValidation.error}
-                        </div>
-                      )}
-                    </div>
-                  )}
-                </div>
-
-                {/* Section C: Approval Flow & Privacy */}
-                <div style={{ borderTop: '1px solid #E2E8F0', paddingTop: '12px' }}>
-                  <h4 style={{ margin: '0 0 10px', fontSize: '0.92rem', fontWeight: 800, color: '#0F172A' }}>
-                    Approval Flow & Payslip Visibility
-                  </h4>
-
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '12px' }}>
-                    <div>
-                      <label className="form-label">Approval Hierarchy Flow</label>
-                      <select
-                        className="form-control"
-                        value={form.approvalFlow}
-                        onChange={e => setForm({ ...form, approvalFlow: e.target.value as LeaveApprovalFlow })}
-                      >
-                        <option value="EMPLOYEE_HR">Option 3: Employee → HR</option>
-                        <option value="EMPLOYEE_MANAGER_HR">Option 2: Employee → Manager → HR</option>
-                        <option value="EMPLOYEE_HR_CEO">Option 1: Employee → HR → CEO</option>
-                      </select>
-                    </div>
-
-                    <div>
-                      <label className="form-label">Employee Payslip Visibility</label>
-                      <select
-                        className="form-control"
-                        value={form.deductionVisibility}
-                        onChange={e => setForm({ ...form, deductionVisibility: e.target.value as DeductionVisibility })}
-                      >
-                        <option value="GENERIC">Generic Label (Confidential)</option>
-                        <option value="DETAILED">Detailed Breakdown</option>
-                      </select>
-                    </div>
-
-                    <div>
-                      <label className="form-label">Generic Label on Slip</label>
-                      <input
-                        type="text"
-                        className="form-control"
-                        value={form.genericCategoryLabel}
-                        onChange={e => setForm({ ...form, genericCategoryLabel: e.target.value })}
-                        disabled={form.deductionVisibility !== 'GENERIC'}
-                      />
-                    </div>
+                  <div style={{ fontSize: '0.78rem', color: '#64748B', marginTop: '6px' }}>
+                    Entitlement: <strong style={{ color: '#0E7490' }}>{form.quotaDays} Day{form.quotaDays !== 1 ? 's' : ''}</strong> {form.frequency === 'MONTH' ? `per Month (${form.quotaDays * 12} days/year)` : 'per Year'}
                   </div>
                 </div>
 
-                {/* Section D: Quota Types */}
-                <div style={{ borderTop: '1px solid #E2E8F0', paddingTop: '12px' }}>
-                  <h4 style={{ margin: '0 0 10px', fontSize: '0.92rem', fontWeight: 800, color: '#0F172A' }}>
-                    Leave Types Configuration ({form.leaveTypes.length})
-                  </h4>
+                {/* 3. Leave Type */}
+                <div>
+                  <label style={{ display: 'block', marginBottom: '6px', fontSize: '0.85rem', fontWeight: 700, color: '#1E293B' }}>
+                    Leave Type <span style={{ color: '#EF4444' }}>*</span>
+                  </label>
+                  <select
+                    className="form-control"
+                    value={form.leaveType}
+                    onChange={e => {
+                      const val = e.target.value;
+                      setForm(prev => {
+                        const nextPolicyName = (!prev.policyName || prev.policyName === `${prev.leaveType} Policy`) && val !== 'CUSTOM'
+                          ? `${val} Policy`
+                          : prev.policyName;
+                        return {
+                          ...prev,
+                          leaveType: val,
+                          policyName: nextPolicyName || prev.policyName
+                        };
+                      });
+                    }}
+                    style={{
+                      width: '100%',
+                      padding: '10px 14px',
+                      borderRadius: '10px',
+                      border: '1px solid #E2E8F0',
+                      fontSize: '0.9rem',
+                      color: '#1E293B',
+                      outline: 'none',
+                      backgroundColor: '#FFFFFF',
+                      boxSizing: 'border-box'
+                    }}
+                  >
+                    <option value="Casual Leave (CL)">Casual Leave (CL)</option>
+                    <option value="Sick Leave (SL)">Sick Leave (SL)</option>
+                    <option value="Earned Leave (EL)">Earned Leave (EL)</option>
+                    <option value="Privilege Leave (PL)">Privilege Leave (PL)</option>
+                    <option value="Compensatory Off (Comp-Off)">Compensatory Off (Comp-Off)</option>
+                    <option value="Maternity Leave">Maternity Leave</option>
+                    <option value="Paternity Leave">Paternity Leave</option>
+                    <option value="Bereavement Leave">Bereavement Leave</option>
+                    <option value="Loss of Pay (LOP)">Loss of Pay (LOP)</option>
+                    <option value="CUSTOM">Custom Leave Type...</option>
+                  </select>
 
-                  <div style={{ display: 'flex', gap: '8px', marginBottom: '12px' }}>
+                  {form.leaveType === 'CUSTOM' && (
                     <input
                       type="text"
-                      className="form-control form-control-sm"
-                      placeholder="Custom Leave Type Name"
-                      value={newLeaveTypeName}
-                      onChange={e => setNewLeaveTypeName(e.target.value)}
+                      className="form-control"
+                      value={form.customLeaveType}
+                      onChange={e => setForm(prev => ({ ...prev, customLeaveType: e.target.value }))}
+                      placeholder="Enter custom leave type name (e.g. Marriage Leave)"
+                      required
+                      style={{
+                        width: '100%',
+                        padding: '10px 14px',
+                        borderRadius: '10px',
+                        border: '1px solid #E2E8F0',
+                        fontSize: '0.9rem',
+                        marginTop: '8px',
+                        outline: 'none',
+                        boxSizing: 'border-box'
+                      }}
                     />
-                    <input
-                      type="number"
-                      className="form-control form-control-sm"
-                      placeholder="Quota"
-                      style={{ width: '90px' }}
-                      value={newLeaveTypeQuota}
-                      onChange={e => setNewLeaveTypeQuota(parseInt(e.target.value) || 0)}
-                    />
-                    <select
-                      className="form-control form-control-sm"
-                      value={newLeaveTypeIsPaid ? 'PAID' : 'UNPAID'}
-                      onChange={e => setNewLeaveTypeIsPaid(e.target.value === 'PAID')}
-                      style={{ width: '110px' }}
-                    >
-                      <option value="PAID">Paid</option>
-                      <option value="UNPAID">Unpaid</option>
-                    </select>
-                    <button type="button" className="btn btn-secondary btn-sm" onClick={handleAddCustomLeaveType}>
-                      Add Type
-                    </button>
-                  </div>
+                  )}
+                </div>
 
-                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
-                    {form.leaveTypes.map(t => (
-                      <span
-                        key={t.id}
-                        style={{
-                          fontSize: '0.78rem',
-                          fontWeight: 600,
-                          backgroundColor: '#F8FAFC',
-                          border: '1px solid #E2E8F0',
-                          padding: '4px 10px',
-                          borderRadius: '8px',
-                          display: 'inline-flex',
-                          alignItems: 'center',
-                          gap: '6px'
-                        }}
-                      >
-                        {t.name} ({t.quotaPerYear} days / {t.isPaid ? 'Paid' : 'Unpaid'})
-                        <button
-                          type="button"
-                          onClick={() => handleRemoveLeaveType(t.id)}
-                          style={{ border: 'none', background: 'none', cursor: 'pointer', color: '#94A3B8' }}
-                        >
-                          ×
-                        </button>
-                      </span>
-                    ))}
+                {/* 4. Paid or Unpaid */}
+                <div>
+                  <label style={{ display: 'block', marginBottom: '6px', fontSize: '0.85rem', fontWeight: 700, color: '#1E293B' }}>
+                    Paid or Unpaid <span style={{ color: '#EF4444' }}>*</span>
+                  </label>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                    {/* Paid Option */}
+                    <div
+                      role="button"
+                      tabIndex={0}
+                      onClick={() => setForm(prev => ({ ...prev, isPaid: true }))}
+                      onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') setForm(prev => ({ ...prev, isPaid: true })); }}
+                      style={{
+                        padding: '14px',
+                        borderRadius: '12px',
+                        border: form.isPaid ? '2px solid #0E7490' : '1.5px solid #E2E8F0',
+                        backgroundColor: form.isPaid ? '#ECFEFF' : '#FFFFFF',
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '10px',
+                        transition: 'all 0.15s ease'
+                      }}
+                    >
+                      <div style={{
+                        width: '18px',
+                        height: '18px',
+                        borderRadius: '50%',
+                        border: form.isPaid ? '5px solid #0E7490' : '2px solid #CBD5E1',
+                        backgroundColor: '#FFFFFF',
+                        flexShrink: 0
+                      }} />
+                      <div>
+                        <div style={{ fontWeight: 700, fontSize: '0.88rem', color: form.isPaid ? '#0E7490' : '#1E293B' }}>
+                          Paid
+                        </div>
+                        <div style={{ fontSize: '0.72rem', color: '#64748B', marginTop: '2px' }}>
+                          No salary deduction
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Unpaid Option */}
+                    <div
+                      role="button"
+                      tabIndex={0}
+                      onClick={() => setForm(prev => ({ ...prev, isPaid: false }))}
+                      onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') setForm(prev => ({ ...prev, isPaid: false })); }}
+                      style={{
+                        padding: '14px',
+                        borderRadius: '12px',
+                        border: !form.isPaid ? '2px solid #EF4444' : '1.5px solid #E2E8F0',
+                        backgroundColor: !form.isPaid ? '#FEF2F2' : '#FFFFFF',
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '10px',
+                        transition: 'all 0.15s ease'
+                      }}
+                    >
+                      <div style={{
+                        width: '18px',
+                        height: '18px',
+                        borderRadius: '50%',
+                        border: !form.isPaid ? '5px solid #EF4444' : '2px solid #CBD5E1',
+                        backgroundColor: '#FFFFFF',
+                        flexShrink: 0
+                      }} />
+                      <div>
+                        <div style={{ fontWeight: 700, fontSize: '0.88rem', color: !form.isPaid ? '#DC2626' : '#1E293B' }}>
+                          Unpaid
+                        </div>
+                        <div style={{ fontSize: '0.72rem', color: '#64748B', marginTop: '2px' }}>
+                          Loss of pay (deducted)
+                        </div>
+                      </div>
+                    </div>
                   </div>
                 </div>
               </div>
 
-              <div className="modal-footer" style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
-                <button type="button" className="btn btn-secondary" onClick={() => setIsModalOpen(false)}>
+              <div className="modal-footer" style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', padding: '16px 24px', borderTop: '1px solid #E7ECF3' }}>
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  onClick={() => setIsModalOpen(false)}
+                  style={{ padding: '8px 18px', borderRadius: '10px' }}
+                >
                   Cancel
                 </button>
-                <button type="submit" className="btn btn-primary">
-                  {editingPolicy ? 'Update Policy' : 'Create Policy'}
+                <button
+                  type="submit"
+                  className="btn btn-primary"
+                  style={{
+                    padding: '8px 22px',
+                    borderRadius: '10px',
+                    backgroundColor: '#0E7490',
+                    borderColor: '#0E7490',
+                    fontWeight: 700
+                  }}
+                >
+                  {editingPolicy ? 'Save Changes' : 'Create Policy'}
                 </button>
               </div>
             </form>

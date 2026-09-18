@@ -5,8 +5,10 @@ import {
   ChevronRight, 
   Calendar, 
   ChevronDown,
-  Check
+  Check,
+  Clock
 } from 'lucide-react';
+import { formatDateDDMMYYYY } from '../../utils/dateUtils';
 
 interface OvertimeReviewItem {
   id: string;
@@ -34,41 +36,8 @@ export const ReviewOvertimeView: React.FC<{ onBack?: () => void }> = ({ onBack }
   const [dropdownOpen, setDropdownOpen] = useState<boolean>(false);
   const [showOtherDates, setShowOtherDates] = useState<boolean>(false);
 
-  // Overtime items matching Screenshots 1, 2, and 4
-  const [otItems, setOtItems] = useState<OvertimeReviewItem[]>([
-    {
-      id: 'OT-101',
-      employeeId: 'EMP-051',
-      employeeName: 'PURUSHOTHAMAN M',
-      inTime: '9:30 AM',
-      outTime: '7:15 PM',
-      otDuration: '45 min Overtime',
-      otMinutes: 45,
-      date: '08 Sep, 2026',
-      shiftHours: '9:30-6:30',
-      hourlyRate: 138.89,
-      multiplier: '1x Salary',
-      calculatedAmount: 104.17,
-      status: 'Approval Pending',
-      isSelected: false
-    },
-    {
-      id: 'OT-102',
-      employeeId: 'EMP-050',
-      employeeName: 'JAYASURYA V',
-      inTime: '09:59 AM',
-      outTime: '06:35 PM',
-      otDuration: '35 min Overtime',
-      otMinutes: 35,
-      date: '08 Sep, 2026',
-      shiftHours: '9:30-6:30',
-      hourlyRate: 142.50,
-      multiplier: '1.5x Salary',
-      calculatedAmount: 124.68,
-      status: 'Approval Pending',
-      isSelected: false
-    }
-  ]);
+  // Overtime items
+  const [otItems, setOtItems] = useState<OvertimeReviewItem[]>([]);
 
   const [selectAll, setSelectAll] = useState<boolean>(false);
 
@@ -188,58 +157,60 @@ export const ReviewOvertimeView: React.FC<{ onBack?: () => void }> = ({ onBack }
           </button>
         )}
 
-        {/* Yellow Alert Banner matching Screenshot 4 */}
-        <div
-          style={{
-            backgroundColor: '#FEFCE8',
-            border: '1px solid #FEF08A',
-            borderRadius: '12px',
-            padding: '12px 18px',
-            display: 'flex',
-            justifyContent: 'space-between',
-            alignItems: 'center',
-            marginBottom: '24px'
-          }}
-        >
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-            <div
-              style={{
-                width: '22px',
-                height: '22px',
-                borderRadius: '50%',
-                backgroundColor: '#EAB308',
-                color: '#FFFFFF',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                fontSize: '0.75rem',
-                fontWeight: 800
-              }}
-            >
-              i
-            </div>
-            <span style={{ fontSize: '0.92rem', fontWeight: 600, color: '#854D0E' }}>
-              Approval pending for other dates
-            </span>
-          </div>
-          <button
-            type="button"
-            onClick={() => setShowOtherDates(!showOtherDates)}
+        {/* Notice Bar for pending items */}
+        {otItems.length > 0 && (
+          <div
             style={{
-              background: 'none',
-              border: 'none',
-              color: '#2563EB',
-              fontWeight: 700,
-              fontSize: '0.9rem',
-              cursor: 'pointer'
+              backgroundColor: '#FEF9C3',
+              border: '1px solid #FEF08A',
+              borderRadius: '12px',
+              padding: '12px 18px',
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              marginBottom: '24px'
             }}
           >
-            View
-          </button>
-        </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <div
+                style={{
+                  width: '22px',
+                  height: '22px',
+                  borderRadius: '50%',
+                  backgroundColor: '#EAB308',
+                  color: '#FFFFFF',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  fontSize: '0.75rem',
+                  fontWeight: 800
+                }}
+              >
+                i
+              </div>
+              <span style={{ fontSize: '0.92rem', fontWeight: 600, color: '#854D0E' }}>
+                Approval pending for other dates
+              </span>
+            </div>
+            <button
+              type="button"
+              onClick={() => setShowOtherDates(!showOtherDates)}
+              style={{
+                background: 'none',
+                border: 'none',
+                color: '#2563EB',
+                fontWeight: 700,
+                fontSize: '0.9rem',
+                cursor: 'pointer'
+              }}
+            >
+              View
+            </button>
+          </div>
+        )}
 
         {/* Other dates flyout notice */}
-        {showOtherDates && (
+        {showOtherDates && otItems.length > 0 && (
           <div
             style={{
               backgroundColor: '#F8FAFC',
@@ -251,7 +222,7 @@ export const ReviewOvertimeView: React.FC<{ onBack?: () => void }> = ({ onBack }
               color: '#475569'
             }}
           >
-            <strong>Pending Dates:</strong> 05 Sep 2026 (2 requests), 06 Sep 2026 (1 request). Click any date to review.
+            <strong>Pending Dates:</strong> Check previous dates with recorded overtime punches.
           </div>
         )}
 
@@ -447,77 +418,84 @@ export const ReviewOvertimeView: React.FC<{ onBack?: () => void }> = ({ onBack }
 
       {/* OVERTIME CARDS LIST matching Screenshot 1 & 2 */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: '18px' }}>
-        {otItems.map(item => (
-          <div
-            key={item.id}
-            style={{
-              border: '1px solid #E2E8F0',
-              borderRadius: '18px',
-              padding: '20px',
-              backgroundColor: '#FFFFFF',
-              boxShadow: '0 1px 3px rgba(0,0,0,0.02)'
-            }}
-          >
-            {/* Top Row: Employee Summary */}
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', flexWrap: 'wrap', gap: '12px' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
-                <input
-                  type="checkbox"
-                  checked={item.isSelected}
-                  onChange={() => handleToggleItem(item.id)}
-                  style={{ width: '18px', height: '18px', accentColor: '#2563EB', borderRadius: '4px', cursor: 'pointer' }}
-                />
-                <div>
-                  <div style={{ fontSize: '1rem', fontWeight: 800, color: '#0F172A' }}>
-                    {item.employeeName}
-                  </div>
-                  <div style={{ fontSize: '0.82rem', color: '#64748B', marginTop: '2px' }}>
-                    In: <strong style={{ color: '#1E293B' }}>{item.inTime}</strong> | Out: <strong style={{ color: '#1E293B' }}>{item.outTime}</strong>
-                  </div>
-                </div>
-              </div>
-
-              <div style={{ textAlign: 'center' }}>
-                <div style={{ fontSize: '0.95rem', fontWeight: 800, color: '#1E293B' }}>
-                  {item.otDuration}
-                </div>
-                <div style={{ fontSize: '0.78rem', color: '#64748B' }}>
-                  {item.otMinutes} min
-                </div>
-              </div>
-
-              <div style={{ textAlign: 'right' }}>
-                <div style={{ fontSize: '0.9rem', fontWeight: 700, color: '#1E293B' }}>
-                  {item.date}
-                </div>
-                <div style={{ fontSize: '0.78rem', color: '#64748B' }}>
-                  {item.shiftHours}
-                </div>
-              </div>
-            </div>
-
-            {/* Expandable Overtime Section matching Screenshots 1 & 4 */}
+        {otItems.length === 0 ? (
+          <div style={{ padding: '48px 24px', textAlign: 'center', backgroundColor: '#FFFFFF', borderRadius: '18px', border: '1px solid #E2E8F0', color: '#64748B' }}>
+            <Clock size={36} color="#94A3B8" style={{ margin: '0 auto 12px', display: 'block', opacity: 0.7 }} />
+            <h3 style={{ margin: '0 0 4px', fontSize: '1rem', fontWeight: 700, color: '#1E293B' }}>No Overtime Pending Review</h3>
+            <p style={{ margin: 0, fontSize: '0.85rem' }}>There are currently no overtime requests awaiting approval for {selectedDateStr}.</p>
+          </div>
+        ) : (
+          otItems.map(item => (
             <div
+              key={item.id}
               style={{
-                backgroundColor: '#F8FAFC',
-                borderRadius: '14px',
-                padding: '16px 20px',
-                border: '1px solid #F1F5F9',
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'center',
-                flexWrap: 'wrap',
-                gap: '16px'
+                border: '1px solid #E2E8F0',
+                borderRadius: '18px',
+                padding: '20px',
+                backgroundColor: '#FFFFFF',
+                boxShadow: '0 1px 3px rgba(0,0,0,0.02)'
               }}
             >
-              <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.9rem', fontWeight: 700, color: '#1E293B', cursor: 'pointer' }}>
-                <input type="checkbox" defaultChecked style={{ width: '16px', height: '16px', accentColor: '#2563EB' }} />
-                Overtime
-              </label>
+              {/* Top Row: Employee Summary */}
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', flexWrap: 'wrap', gap: '12px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+                  <input
+                    type="checkbox"
+                    checked={item.isSelected}
+                    onChange={() => handleToggleItem(item.id)}
+                    style={{ width: '18px', height: '18px', accentColor: '#2563EB', borderRadius: '4px', cursor: 'pointer' }}
+                  />
+                  <div>
+                    <div style={{ fontSize: '1rem', fontWeight: 800, color: '#0F172A' }}>
+                      {item.employeeName}
+                    </div>
+                    <div style={{ fontSize: '0.82rem', color: '#64748B', marginTop: '2px' }}>
+                      In: <strong style={{ color: '#1E293B' }}>{item.inTime}</strong> | Out: <strong style={{ color: '#1E293B' }}>{item.outTime}</strong>
+                    </div>
+                  </div>
+                </div>
 
-              <div style={{ display: 'flex', alignItems: 'center', gap: '16px', flexWrap: 'wrap' }}>
-                {/* Hours Box */}
-                <div>
+                <div style={{ textAlign: 'center' }}>
+                  <div style={{ fontSize: '0.95rem', fontWeight: 800, color: '#1E293B' }}>
+                    {item.otDuration}
+                  </div>
+                  <div style={{ fontSize: '0.78rem', color: '#64748B' }}>
+                    {item.otMinutes} min
+                  </div>
+                </div>
+
+                <div style={{ textAlign: 'right' }}>
+                  <div style={{ fontSize: '0.9rem', fontWeight: 700, color: '#1E293B' }}>
+                    {formatDateDDMMYYYY(item.date)}
+                  </div>
+                  <div style={{ fontSize: '0.78rem', color: '#64748B' }}>
+                    {item.shiftHours}
+                  </div>
+                </div>
+              </div>
+
+              {/* Expandable Overtime Section */}
+              <div
+                style={{
+                  backgroundColor: '#F8FAFC',
+                  borderRadius: '14px',
+                  padding: '16px 20px',
+                  border: '1px solid #F1F5F9',
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  flexWrap: 'wrap',
+                  gap: '16px'
+                }}
+              >
+                <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.9rem', fontWeight: 700, color: '#1E293B', cursor: 'pointer' }}>
+                  <input type="checkbox" defaultChecked style={{ width: '16px', height: '16px', accentColor: '#2563EB' }} />
+                  Overtime
+                </label>
+
+                <div style={{ display: 'flex', alignItems: 'center', gap: '16px', flexWrap: 'wrap' }}>
+                  {/* Hours Box */}
+                  <div>
                   <div style={{ fontSize: '0.72rem', fontWeight: 700, color: '#64748B', marginBottom: '4px' }}>Hours</div>
                   <div
                     style={{
@@ -614,8 +592,9 @@ export const ReviewOvertimeView: React.FC<{ onBack?: () => void }> = ({ onBack }
               </div>
             </div>
           </div>
-        ))}
-      </div>
+        ))
+      )}
+    </div>
     </div>
   );
 };

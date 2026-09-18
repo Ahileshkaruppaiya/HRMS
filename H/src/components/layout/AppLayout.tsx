@@ -26,6 +26,7 @@ import { Organization } from '../organization/Organization';
 import { AssetManagement } from '../assets/AssetManagement';
 import { Settings } from '../settings/Settings';
 import { UserProfile } from '../profile/UserProfile';
+import { TrackingModule } from '../tracking/TrackingModule';
 import { AIAssistantWidget } from '../ai/AIAssistantWidget';
 
 interface AppLayoutProps {
@@ -33,28 +34,51 @@ interface AppLayoutProps {
 }
 
 export const AppLayout: React.FC<AppLayoutProps> = ({ onLogout }) => {
-  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(
+  // Folded by default: expands automatically on cursor hover, folds on mouse leave
+  const [isPinned, setIsPinned] = useState(false);
+  const [isHovered, setIsHovered] = useState(false);
+  const [isMobileOpen, setIsMobileOpen] = useState(false);
+  const [isMobile, setIsMobile] = useState<boolean>(() => 
     typeof window !== 'undefined' ? window.innerWidth <= 1024 : false
   );
-  const { activeModule, setActiveModule, hasPermission } = useHRMS();
+  const { activeModule, setActiveModule, hasPermission, currentUser } = useHRMS();
 
-  useEffect(() => {
-    const handleResize = () => {
-      if (window.innerWidth <= 1024) {
-        setIsSidebarCollapsed(true);
-      }
-    };
-    handleResize();
-    window.addEventListener('resize', handleResize);
-    return () => window.removeEventListener('resize', handleResize);
-  }, []);
+  // AI Assistant restricted strictly to HR Admin and CEO (Super Admin / Management)
+  const isHrOrCeo = currentUser?.role === 'Super Admin' || currentUser?.role === 'HR Admin' || currentUser?.role === 'Management' || currentUser?.role?.toLowerCase() === 'ceo';
 
   // Quick Add modal states
   const [quickAddModal, setQuickAddModal] = useState<'employee' | 'leave' | 'task' | 'expense' | 'overtime' | null>(null);
 
-  const toggleSidebar = () => {
-    setIsSidebarCollapsed(!isSidebarCollapsed);
+  // Monitor viewport resize for responsive mobile detection
+  useEffect(() => {
+    const handleResize = () => {
+      const mobile = window.innerWidth <= 1024;
+      setIsMobile(mobile);
+      if (!mobile) {
+        setIsMobileOpen(false);
+      }
+    };
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
+  // Close mobile sidebar on module change
+  const handleSelectModule = (mod: any) => {
+    setActiveModule(mod);
+    if (isMobile) {
+      setIsMobileOpen(false);
+    }
   };
+
+  const toggleSidebar = () => {
+    if (isMobile) {
+      setIsMobileOpen(prev => !prev);
+    } else {
+      setIsPinned(prev => !prev);
+    }
+  };
+
+  const isExpanded = isMobile ? isMobileOpen : (isPinned || isHovered);
 
   const renderModuleView = () => {
     // RBAC Security Check
@@ -77,8 +101,10 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ onLogout }) => {
         return <Dashboard />;
       case 'employees':
         return <EmployeeList openAddModal={quickAddModal === 'employee'} onCloseQuickAdd={() => setQuickAddModal(null)} />;
-      case 'face_attendance':
-        return <FaceAttendance />;
+      case 'face_attendance': {
+        const isCEO = currentUser.role === 'CEO' || currentUser.designation === 'CEO' || currentUser.employeeId === 'EMP-000';
+        return isCEO ? <Dashboard /> : <FaceAttendance />;
+      }
       case 'attendance':
         return <AttendanceReportsView title="Attendance Management" subtitle="Real-time attendance logs, muster roll verification, and departmental reports." />;
       case 'gps_geofence':
@@ -111,6 +137,8 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ onLogout }) => {
         return <Settings onLogout={onLogout} />;
       case 'profile':
         return <Settings onLogout={onLogout} initialSection="my_profile" />;
+      case 'tracking':
+        return <TrackingModule />;
       default:
         return <Dashboard />;
     }
@@ -118,18 +146,37 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ onLogout }) => {
 
   return (
     <div className="hrms-layout">
-      <Sidebar isCollapsed={isSidebarCollapsed} toggleSidebar={toggleSidebar} />
+      {/* Mobile Drawer Backdrop Overlay */}
+      {isMobile && isMobileOpen && (
+        <div 
+          className="sidebar-backdrop" 
+          onClick={() => setIsMobileOpen(false)}
+          aria-label="Close Sidebar Overlay"
+        />
+      )}
 
-      <div className={`hrms-main-wrapper ${isSidebarCollapsed ? 'sidebar-collapsed' : ''}`}>
+      <Sidebar 
+        isCollapsed={!isExpanded} 
+        isPinned={isPinned}
+        isMobileOpen={isMobileOpen}
+        onCloseMobile={() => setIsMobileOpen(false)}
+        onTogglePin={() => setIsPinned(prev => !prev)}
+        onHoverChange={(hovered) => {
+          if (!isMobile) setIsHovered(hovered);
+        }}
+        toggleSidebar={toggleSidebar} 
+      />
+
+      <div className={`hrms-main-wrapper ${!isExpanded ? 'sidebar-collapsed' : ''}`}>
         <Header 
           toggleSidebar={toggleSidebar} 
-          isSidebarCollapsed={isSidebarCollapsed}
+          isSidebarCollapsed={!isExpanded}
           onLogout={onLogout}
           onOpenQuickAdd={(type) => {
-            if (type === 'employee') setActiveModule('employees');
-            if (type === 'leave') setActiveModule('leaves');
-            if (type === 'task') setActiveModule('tasks');
-            if (type === 'expense') setActiveModule('finance');
+            if (type === 'employee') handleSelectModule('employees');
+            if (type === 'leave') handleSelectModule('leaves');
+            if (type === 'task') handleSelectModule('tasks');
+            if (type === 'expense') handleSelectModule('finance');
             setQuickAddModal(type);
           }}
         />
@@ -139,8 +186,8 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ onLogout }) => {
         </main>
       </div>
 
-      {/* Multilingual AI HRMS Assistant Floating Widget */}
-      <AIAssistantWidget />
+      {/* Multilingual AI HRMS Assistant Floating Widget (HR & CEO only) */}
+      {isHrOrCeo && <AIAssistantWidget />}
     </div>
   );
 };

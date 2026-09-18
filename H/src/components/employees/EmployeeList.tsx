@@ -26,6 +26,7 @@ import {
   RotateCcw,
   Filter
 } from 'lucide-react';
+import { StandardFloatingActionBar } from '../common/StandardFloatingActionBar';
 
 interface EmployeeListProps {
   openAddModal?: boolean;
@@ -48,6 +49,24 @@ export const EmployeeList: React.FC<EmployeeListProps> = ({ openAddModal, onClos
   const [selectedDesignation, setSelectedDesignation] = useState<string>('All');
   const [selectedLocation, setSelectedLocation] = useState<string>('All');
   const [selectedStatus, setSelectedStatus] = useState<string>('All');
+
+  // Multi-row selection state
+  const [selectedEmpIds, setSelectedEmpIds] = useState<string[]>([]);
+
+  const handleToggleEmp = (id: string) => {
+    setSelectedEmpIds(prev => 
+      prev.includes(id) ? prev.filter(eId => eId !== id) : [...prev, id]
+    );
+  };
+
+  const handleToggleSelectAll = () => {
+    if (filteredEmployees.length > 0 && filteredEmployees.every(e => selectedEmpIds.includes(e.id))) {
+      setSelectedEmpIds(prev => prev.filter(id => !filteredEmployees.some(e => e.id === id)));
+    } else {
+      const pageIds = filteredEmployees.map(e => e.id);
+      setSelectedEmpIds(prev => Array.from(new Set([...prev, ...pageIds])));
+    }
+  };
 
   const [isAddModalOpen, setIsAddModalOpen] = useState<boolean>(openAddModal || false);
   const [activeProfileEmp, setActiveProfileEmp] = useState<Employee | null>(null);
@@ -134,7 +153,7 @@ export const EmployeeList: React.FC<EmployeeListProps> = ({ openAddModal, onClos
       {/* Header */}
       <div className="page-header">
         <div className="page-title-group">
-          <h1>Employee Directory {isEmployeeRole ? '(My Profile)' : isManagerRole ? `(${currentUser.department} Department)` : '(All Workforce)'}</h1>
+          <h1>Employee Directory{isEmployeeRole ? ' (My Profile)' : isManagerRole ? ` (${currentUser.department} Department)` : ''}</h1>
           <p className="page-subtitle">
             {isEmployeeRole 
               ? 'View and manage your personal employee profile details' 
@@ -146,14 +165,25 @@ export const EmployeeList: React.FC<EmployeeListProps> = ({ openAddModal, onClos
         <div className="header-actions">
           {(currentUser.role === 'Super Admin' || currentUser.role === 'HR Admin') && (
             <button 
+              type="button"
               className="btn btn-secondary btn-sm" 
               onClick={() => {
                 setOfferLetterEmp(filteredEmployees[0] || null);
                 setShowOfferLetterModal(true);
               }}
-              style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}
+              title="Offer Letter Templates"
+              aria-label="Offer Letter Templates"
+              style={{ 
+                width: '36px', 
+                height: '36px', 
+                padding: 0, 
+                display: 'inline-flex', 
+                alignItems: 'center', 
+                justifyContent: 'center',
+                borderRadius: '10px'
+              }}
             >
-              <FileText size={15} color="#2563eb" /> Offer Letter Templates
+              <FileText size={16} color="#0E7490" />
             </button>
           )}
           <ExportDropdown 
@@ -171,41 +201,41 @@ export const EmployeeList: React.FC<EmployeeListProps> = ({ openAddModal, onClos
       </div>
 
       {/* KPI Overview Cards */}
-      <div className="kpi-grid">
-        <div className="kpi-card">
+      <div className="kpi-grid compact">
+        <div className="kpi-card compact">
           <div className="kpi-card-header">
             <span>{isEmployeeRole ? 'My Profile Status' : isManagerRole ? 'Department Staff' : 'Total Employees'}</span>
-            <div className="kpi-icon-wrapper blue"><Users size={20} /></div>
+            <div className="kpi-icon-wrapper blue"><Users size={16} /></div>
           </div>
           <div className="kpi-card-body">
             <div className="kpi-value">{roleScopedEmployees.length}</div>
           </div>
         </div>
 
-        <div className="kpi-card">
+        <div className="kpi-card compact">
           <div className="kpi-card-header">
             <span>Active Workforce</span>
-            <div className="kpi-icon-wrapper emerald"><UserCheck size={20} /></div>
+            <div className="kpi-icon-wrapper emerald"><UserCheck size={16} /></div>
           </div>
           <div className="kpi-card-body">
             <div className="kpi-value">{roleScopedEmployees.filter(e => e.status === 'Active').length}</div>
           </div>
         </div>
 
-        <div className="kpi-card">
+        <div className="kpi-card compact">
           <div className="kpi-card-header">
             <span>On Leave</span>
-            <div className="kpi-icon-wrapper rose"><UserX size={20} /></div>
+            <div className="kpi-icon-wrapper rose"><UserX size={16} /></div>
           </div>
           <div className="kpi-card-body">
             <div className="kpi-value">{roleScopedEmployees.filter(e => e.status === 'On Leave').length}</div>
           </div>
         </div>
 
-        <div className="kpi-card">
+        <div className="kpi-card compact">
           <div className="kpi-card-header">
             <span>{isManagerRole ? 'Assigned Department' : 'Departments'}</span>
-            <div className="kpi-icon-wrapper purple"><Building size={20} /></div>
+            <div className="kpi-icon-wrapper purple"><Building size={16} /></div>
           </div>
           <div className="kpi-card-body">
             <div className="kpi-value">{isManagerRole ? 1 : departments.length}</div>
@@ -305,6 +335,15 @@ export const EmployeeList: React.FC<EmployeeListProps> = ({ openAddModal, onClos
         <table className="hrms-table" style={{ width: '100%', minWidth: '1000px' }}>
           <thead>
             <tr>
+              <th style={{ width: '40px', minWidth: '40px', textAlign: 'center' }}>
+                <input
+                  type="checkbox"
+                  checked={filteredEmployees.length > 0 && filteredEmployees.every(e => selectedEmpIds.includes(e.id))}
+                  onChange={handleToggleSelectAll}
+                  style={{ accentColor: '#0E7490', cursor: 'pointer', width: '16px', height: '16px' }}
+                  aria-label="Select all employees"
+                />
+              </th>
               <th>Employee</th>
               <th>Department</th>
               <th>Designation</th>
@@ -318,14 +357,32 @@ export const EmployeeList: React.FC<EmployeeListProps> = ({ openAddModal, onClos
           <tbody>
             {filteredEmployees.length === 0 ? (
               <tr>
-                <td colSpan={8} style={{ textAlign: 'center', padding: '40px', color: 'var(--text-muted)' }}>
+                <td colSpan={9} style={{ textAlign: 'center', padding: '40px', color: 'var(--text-muted)' }}>
                   No employees matched your criteria.
                 </td>
               </tr>
             ) : (
               filteredEmployees.map(emp => {
+                const isSelected = selectedEmpIds.includes(emp.id);
+
                 return (
-                  <tr key={emp.id}>
+                  <tr 
+                    key={emp.id}
+                    style={{
+                      backgroundColor: isSelected ? '#ECFEFF' : undefined,
+                      borderLeft: isSelected ? '4px solid #0E7490' : undefined,
+                      transition: 'background-color 0.15s ease'
+                    }}
+                  >
+                    <td style={{ textAlign: 'center', verticalAlign: 'middle', width: '40px' }} onClick={e => e.stopPropagation()}>
+                      <input
+                        type="checkbox"
+                        checked={isSelected}
+                        onChange={() => handleToggleEmp(emp.id)}
+                        style={{ accentColor: '#0E7490', cursor: 'pointer', width: '16px', height: '16px' }}
+                        aria-label={`Select employee ${emp.firstName}`}
+                      />
+                    </td>
                     <td>
                       <div className="user-cell">
                         {emp.avatar ? (
@@ -365,41 +422,76 @@ export const EmployeeList: React.FC<EmployeeListProps> = ({ openAddModal, onClos
                         {emp.status}
                       </span>
                     </td>
-                    <td>
-                      <div style={{ display: 'flex', gap: '8px' }}>
+                    <td style={{ whiteSpace: 'nowrap', verticalAlign: 'middle', width: '80px' }}>
+                      <div style={{ display: 'inline-flex', gap: '6px', alignItems: 'center' }}>
                         <button 
-                          className="btn btn-secondary btn-sm" 
-                          title="View Connected Profile"
+                          type="button"
+                          title="View Profile"
+                          aria-label="View Profile"
                           onClick={() => setActiveProfileEmp(emp)}
+                          style={{
+                            width: '28px',
+                            height: '28px',
+                            borderRadius: '6px',
+                            border: '1px solid #E2E8F0',
+                            background: '#F8FAFC',
+                            color: '#0E7490',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            cursor: 'pointer',
+                            padding: 0,
+                            transition: 'all 0.15s ease'
+                          }}
+                          onMouseEnter={(e) => {
+                            e.currentTarget.style.backgroundColor = '#ECFEFF';
+                            e.currentTarget.style.borderColor = '#A5F3FC';
+                          }}
+                          onMouseLeave={(e) => {
+                            e.currentTarget.style.backgroundColor = '#F8FAFC';
+                            e.currentTarget.style.borderColor = '#E2E8F0';
+                          }}
                         >
-                          <Eye size={14} /> Profile
+                          <Eye size={14} />
                         </button>
 
                         {(currentUser.role === 'Super Admin' || currentUser.role === 'HR Admin') && (
                           <button 
-                            className="btn btn-secondary btn-sm" 
+                            type="button"
                             title="Generate / View Offer Letter"
+                            aria-label="Generate / View Offer Letter"
                             onClick={() => {
                               setOfferLetterEmp(emp);
                               setShowOfferLetterModal(true);
                             }}
-                            style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}
+                            style={{
+                              width: '28px',
+                              height: '28px',
+                              borderRadius: '6px',
+                              border: '1px solid #E2E8F0',
+                              background: '#F8FAFC',
+                              color: '#64748B',
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              cursor: 'pointer',
+                              padding: 0,
+                              transition: 'all 0.15s ease'
+                            }}
+                            onMouseEnter={(e) => {
+                              e.currentTarget.style.backgroundColor = '#ECFEFF';
+                              e.currentTarget.style.borderColor = '#A5F3FC';
+                              e.currentTarget.style.color = '#0E7490';
+                            }}
+                            onMouseLeave={(e) => {
+                              e.currentTarget.style.backgroundColor = '#F8FAFC';
+                              e.currentTarget.style.borderColor = '#E2E8F0';
+                              e.currentTarget.style.color = '#64748B';
+                            }}
                           >
-                            <FileText size={14} color="var(--color-primary-blue)" /> Offer Letter
+                            <FileText size={14} />
                           </button>
                         )}
-
-                        <button 
-                          className="btn btn-danger btn-sm" 
-                          title="Delete Employee"
-                          onClick={() => {
-                            const check = canDeleteEmployee(emp.employeeId);
-                            setDeleteTargetEmp(emp);
-                            setDeleteCheckResult(check);
-                          }}
-                        >
-                          <Trash2 size={14} />
-                        </button>
                       </div>
                     </td>
                   </tr>
@@ -409,6 +501,46 @@ export const EmployeeList: React.FC<EmployeeListProps> = ({ openAddModal, onClos
           </tbody>
         </table>
       </div>
+
+      {/* Floating Action Bar per AGENTS.md */}
+      <StandardFloatingActionBar
+        selectedCount={selectedEmpIds.length}
+        onClearSelection={() => setSelectedEmpIds([])}
+        onEdit={selectedEmpIds.length === 1 ? () => {
+          const emp = filteredEmployees.find(e => e.id === selectedEmpIds[0]);
+          if (emp) setActiveProfileEmp(emp);
+        } : undefined}
+        onDelete={() => {
+          if (selectedEmpIds.length === 1) {
+            const emp = filteredEmployees.find(e => e.id === selectedEmpIds[0]);
+            if (emp) {
+              const check = canDeleteEmployee(emp.employeeId);
+              setDeleteTargetEmp(emp);
+              setDeleteCheckResult(check);
+            }
+          } else {
+            alert(`Selected ${selectedEmpIds.length} employees`);
+          }
+        }}
+        customActions={
+          (currentUser.role === 'Super Admin' || currentUser.role === 'HR Admin') && selectedEmpIds.length === 1 ? (
+            <button
+              type="button"
+              className="action-bar-btn"
+              onClick={() => {
+                const emp = filteredEmployees.find(e => e.id === selectedEmpIds[0]);
+                if (emp) {
+                  setOfferLetterEmp(emp);
+                  setShowOfferLetterModal(true);
+                }
+              }}
+            >
+              <FileText size={14} />
+              <span>Offer Letter</span>
+            </button>
+          ) : undefined
+        }
+      />
 
       {/* Add Employee Modal */}
       {isAddModalOpen && (

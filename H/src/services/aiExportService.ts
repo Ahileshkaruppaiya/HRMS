@@ -169,7 +169,7 @@ export function exportToPDF(
         </table>
 
         <div class="footer">
-          <div>VRM Structures India Pvt Ltd • Confidential HRMS Report</div>
+          <div>Businz • Confidential HRMS Report</div>
           <div>Page 1 of 1</div>
         </div>
 

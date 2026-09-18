@@ -6,6 +6,7 @@ export interface SalaryStructureInput {
   daPercentage: number;
   conveyancePercentage: number;
   hraPercentage: number;
+  withPf?: boolean;
 }
 
 export interface ComputedSalaryStructure {
@@ -102,6 +103,7 @@ export interface PayrollCalculationInput {
   attendance: AttendanceInputData;
   earnings?: AdditionalEarningsInput;
   deductions?: AdditionalDeductionsInput;
+  withPf?: boolean;
 }
 
 export interface CalculationBreakdownItem {
@@ -115,6 +117,7 @@ export interface FullPayrollCalculationResult {
   employeeId: string;
   payrollMonth: number;
   payrollYear: number;
+  withPf?: boolean;
 
   // Fixed Salary Components
   monthlySalary: number;

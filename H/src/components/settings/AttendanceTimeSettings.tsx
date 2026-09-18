@@ -481,10 +481,11 @@ export const AttendanceTimeSettings: React.FC = () => {
                       <div style={{ display: 'flex', gap: '8px' }}>
                         <button
                           className="btn btn-secondary btn-sm"
-                          style={{ fontSize: '0.78rem', padding: '5px 12px', borderRadius: '8px' }}
+                          style={{ fontSize: '0.78rem', padding: '5px 10px', borderRadius: '8px' }}
                           onClick={() => openEditPolicyModal(policy)}
+                          title="Edit Policy"
                         >
-                          <Edit3 size={13} /> Edit Policy
+                          <Edit3 size={13} />
                         </button>
                         <button
                           className="btn btn-secondary btn-sm"

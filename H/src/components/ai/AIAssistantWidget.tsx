@@ -46,7 +46,6 @@ import {
   DollarSign,
   Bot,
   User,
-  ArrowRight,
   ExternalLink
 } from 'lucide-react';
 import './AIAssistantWidget.css';
@@ -429,6 +428,8 @@ export const AIAssistantWidget: React.FC = () => {
               attendanceRecords,
               enhancedTasks,
               performanceScores,
+              payrollRecords,
+              departments,
               userRole: role
             },
             activeLang,
@@ -552,6 +553,12 @@ export const AIAssistantWidget: React.FC = () => {
 
   const isInitialState = convState.conversationHistory.length <= 1;
 
+  // AI Assistant is strictly restricted to HR Admin and CEO (Super Admin / Management)
+  const isHrOrCeo = currentUser?.role === 'Super Admin' || currentUser?.role === 'HR Admin' || currentUser?.role === 'Management' || currentUser?.role?.toLowerCase() === 'ceo';
+  if (!isHrOrCeo) {
+    return null;
+  }
+
   return (
     <>
       {/* 
@@ -564,10 +571,10 @@ export const AIAssistantWidget: React.FC = () => {
           id="vrm-ai-chatbot-trigger"
           className="vrm-ai-trigger-btn"
           onClick={() => setIsOpen(true)}
-          title="Open Seri Chat Bot"
-          aria-label="Open Seri Chat Bot"
+          title="Open Pavi Chat Bot"
+          aria-label="Open Pavi Chat Bot"
         >
-          <img src="/seri-bot-logo.png?v=teal" alt="Seri Chat Bot" className="vrm-ai-trigger-icon-img" />
+          <img src="/seri-bot-logo.png?v=teal" alt="Pavi Chat Bot" className="vrm-ai-trigger-icon-img" />
         </button>
       )}
 
@@ -583,13 +590,13 @@ export const AIAssistantWidget: React.FC = () => {
             <div className="vrm-ai-header-brand">
               <div className="vrm-ai-header-icon-wrap">
                 <div className="vrm-ai-header-icon">
-                  <img src="/seri-bot-logo.png?v=teal" alt="Seri Logo" className="vrm-ai-header-logo-img" />
+                  <img src="/seri-bot-logo.png?v=teal" alt="Pavi Logo" className="vrm-ai-header-logo-img" />
                 </div>
               </div>
 
               <div className="vrm-ai-header-meta">
                 <div className="vrm-ai-header-title-row">
-                  <h3 className="vrm-ai-header-title">Seri Chat Bot</h3>
+                  <h3 className="vrm-ai-header-title">Pavi Chat Bot</h3>
                 </div>
               </div>
             </div>
@@ -615,11 +622,11 @@ export const AIAssistantWidget: React.FC = () => {
 
               {/* Close */}
               <button
-                className="vrm-ai-header-btn close-btn"
+                className="vrm-ai-header-btn vrm-ai-close-btn"
                 onClick={() => setIsOpen(false)}
                 title="Close chat"
               >
-                <X size={15} />
+                <X size={15} color="#ffffff" />
               </button>
             </div>
           </div>
@@ -631,7 +638,7 @@ export const AIAssistantWidget: React.FC = () => {
               <div className="vrm-ai-welcome-hub">
                 <div className="vrm-ai-welcome-hero">
                   <div className="vrm-ai-welcome-avatar">
-                    <img src="/seri-bot-logo.png?v=teal" alt="Seri" />
+                    <img src="/seri-bot-logo.png?v=teal" alt="Pavi" />
                   </div>
                   <h4 className="vrm-ai-welcome-title">How can I assist you today?</h4>
                 </div>
@@ -674,7 +681,7 @@ export const AIAssistantWidget: React.FC = () => {
                     {msg.sender === 'user' ? (
                       <User size={16} />
                     ) : (
-                      <img src="/seri-bot-logo.png?v=teal" alt="Seri" className="vrm-ai-msg-avatar-img" />
+                      <img src="/seri-bot-logo.png?v=teal" alt="Pavi" className="vrm-ai-msg-avatar-img" />
                     )}
                   </div>
 
@@ -683,7 +690,7 @@ export const AIAssistantWidget: React.FC = () => {
                     {msg.sender === 'assistant' && (
                       <div className="vrm-ai-bubble-meta-header">
                         <span className="vrm-ai-bubble-badge">
-                          Seri AI
+                          Pavi AI
                         </span>
 
                         <div className="vrm-ai-bubble-tools">
@@ -888,7 +895,7 @@ export const AIAssistantWidget: React.FC = () => {
             {isTyping && (
               <div className="vrm-ai-msg-row assistant">
                 <div className="vrm-ai-avatar assistant">
-                  <img src="/seri-bot-logo.png?v=teal" alt="Seri" className="vrm-ai-msg-avatar-img" />
+                  <img src="/seri-bot-logo.png?v=teal" alt="Pavi" className="vrm-ai-msg-avatar-img" />
                 </div>
                 <div className="vrm-ai-bubble assistant">
                   <div className="vrm-ai-typing">
@@ -917,28 +924,6 @@ export const AIAssistantWidget: React.FC = () => {
               >
                 Cancel ✕
               </button>
-            </div>
-          )}
-
-          {/* Sleek Follow-up Suggestion Chips Bar */}
-          {convState.conversationHistory.length > 0 && (
-            <div className="vrm-ai-suggestions">
-              {(convState.conversationHistory[convState.conversationHistory.length - 1]?.followUpSuggestions || [
-                'Inniku absent yaru?',
-                'Nethu yaru leave?',
-                'En team-la overdue task yaruku irukku?',
-                'Monthly attendance report excel-la kudu',
-                'Total employees evlo peru?'
-              ]).map((suggestion, sIdx) => (
-                <button
-                  key={sIdx}
-                  className="vrm-ai-chip"
-                  onClick={() => handleSendMessage(suggestion)}
-                >
-                  <ArrowRight size={11} color="#0E7490" />
-                  <span>{suggestion}</span>
-                </button>
-              ))}
             </div>
           )}
 
@@ -1036,7 +1021,7 @@ export const AIAssistantWidget: React.FC = () => {
                       disabled={isTestingKey || !apiKeyInput.trim()}
                       style={{ fontSize: '10.5px', color: '#0E7490', background: 'none', border: 'none', cursor: 'pointer', fontWeight: 600, padding: 0 }}
                     >
-                      {isTestingKey ? '⏳ Fetching...' : '🔄 List Models via API'}
+                      {isTestingKey ? 'Fetching...' : '🔄 List Models via API'}
                     </button>
                   </div>
                   <select
@@ -1052,9 +1037,9 @@ export const AIAssistantWidget: React.FC = () => {
                       ))
                     ) : (
                       <>
-                        <option value="gemini-2.0-flash">gemini-2.0-flash (Recommended)</option>
-                        <option value="gemini-1.5-flash">gemini-1.5-flash (Fast)</option>
-                        <option value="gemini-1.5-pro">gemini-1.5-pro (High Reasoning)</option>
+                        <option value="gemini-3.6-flash">gemini-3.6-flash (Recommended & Active)</option>
+                        <option value="gemini-flash-latest">gemini-flash-latest (Fast)</option>
+                        <option value="gemini-2.5-pro">gemini-2.5-pro (High Reasoning)</option>
                       </>
                     )}
                   </select>

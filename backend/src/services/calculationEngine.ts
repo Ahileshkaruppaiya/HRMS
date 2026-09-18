@@ -245,6 +245,7 @@ export const computeFullPayroll = (input: PayrollCalculationInput): FullPayrollC
 
   // 2. Additional Earnings
   const attBonus = new Decimal(input.earnings?.attendanceBonus ?? 0);
+
   const otHours = new Decimal(input.earnings?.overtimeHours ?? 0);
   const otRate = new Decimal(input.earnings?.overtimeRate ?? 0);
   
@@ -269,7 +270,13 @@ export const computeFullPayroll = (input: PayrollCalculationInput): FullPayrollC
     .plus(otherEarnings)
     .toDecimalPlaces(2, Decimal.ROUND_HALF_UP);
 
-  // 3. Statutory Deductions (PF)
+  // 3. Statutory Deductions (PF & ESIC)
+  // New employees under 6 months have no PF/ESIC deductions (withPf: false).
+  // Confirmed employees (withPf: true) have active PF (12%) and ESIC (0.75%).
+  const isPfEligible = input.withPf !== undefined ? input.withPf : true;
+  const pfEnabled = isPfEligible && input.settings.pfEnabled;
+  const esicEnabled = isPfEligible && input.settings.esicEnabled;
+
   const pfResult = calculatePF(
     basic,
     da,
@@ -278,7 +285,7 @@ export const computeFullPayroll = (input: PayrollCalculationInput): FullPayrollC
     attBonus,
     otAmount,
     otherEarnings,
-    input.settings.pfEnabled,
+    pfEnabled,
     input.settings.pfRate,
     input.settings.pfWageComponents
   );
@@ -293,7 +300,7 @@ export const computeFullPayroll = (input: PayrollCalculationInput): FullPayrollC
     otAmount,
     otherEarnings,
     grossSalary,
-    input.settings.esicEnabled,
+    esicEnabled,
     input.settings.esicRate,
     input.settings.esicSalaryThreshold,
     input.settings.esicWageComponents
@@ -405,6 +412,7 @@ export const computeFullPayroll = (input: PayrollCalculationInput): FullPayrollC
     employeeId: input.employeeId,
     payrollMonth: input.payrollMonth,
     payrollYear: input.payrollYear,
+    withPf: isPfEligible,
 
     monthlySalary: structure.monthlySalary,
     basicSalary: basic.toNumber(),

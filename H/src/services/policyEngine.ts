@@ -385,14 +385,24 @@ export const evaluateLeaveDeductions = (
     l => l.employeeId === employee.employeeId && l.status === 'Approved'
   );
 
+  const isProv = policy?.applicableEmploymentType === 'Provisional' || 
+    policy?.id === 'LP-MASTER-PROVISIONAL' || 
+    (policy?.policyName || '').toLowerCase().includes('provisional') || 
+    (policy?.policyName || '').toLowerCase().includes('probation');
+
+  let paidLeavesTaken = 0;
   let regularUnpaidDays = 0;
   let sandwichUnpaidDays = 0;
 
   approvedLeaves.forEach(l => {
-    const isExplicitUnpaid = (l.leaveType || '').toLowerCase().includes('unpaid') || (l.leaveType || '').toLowerCase().includes('lop');
+    const leaveName = (l.leaveType || '').toLowerCase();
+    const isExplicitUnpaid = leaveName.includes('unpaid') || leaveName.includes('lop') || leaveName.includes('loss of pay');
     if (isExplicitUnpaid) {
       regularUnpaidDays += toNum(l.daysCount);
+    } else {
+      paidLeavesTaken += toNum(l.daysCount);
     }
+
     // Also include unpaid sandwich days
     if (l.unpaidSandwichDays && l.unpaidSandwichDays > 0) {
       sandwichUnpaidDays += toNum(l.unpaidSandwichDays);
@@ -401,30 +411,37 @@ export const evaluateLeaveDeductions = (
     }
   });
 
-  const totalUnpaidDays = regularUnpaidDays + sandwichUnpaidDays;
+  // Calculate excess paid leave days beyond allowed policy quota:
+  // - Confirmed: 1 day paid casual leave allowed per month. Excess incurs salary deduction.
+  // - Provisional: 1 day paid leave allowed during the first 3 months of probation. Excess incurs salary deduction.
+  const allowedPaidQuota = 1;
+  const excessPaidLeaves = Math.max(0, paidLeavesTaken - allowedPaidQuota);
+
+  // For provisional employees, free unpaid days is strictly 0 (any leave past 1 paid day incurs deduction)
+  // For confirmed employees, monthly free unpaid leaves comes from policy (default 1)
+  const freeDays = isProv ? 0 : (policy ? toNum(policy.monthlyFreeUnpaidLeaves ?? 1) : 1);
+  const totalUnpaidDays = regularUnpaidDays + sandwichUnpaidDays + excessPaidLeaves;
+  const excessUnpaidDays = isProv 
+    ? (regularUnpaidDays + sandwichUnpaidDays + excessPaidLeaves)
+    : Math.max(0, (regularUnpaidDays + sandwichUnpaidDays) - (paidLeavesTaken === 0 ? freeDays : 0) + excessPaidLeaves);
+
   const sandwichDeduction = Math.round(sandwichUnpaidDays * dailySalary);
 
-  if (totalUnpaidDays === 0) {
+  if (totalUnpaidDays === 0 || excessUnpaidDays === 0) {
     return {
       ...defaultResult,
-      isConfidential: policy?.deductionVisibility === 'GENERIC',
-      genericCategoryLabel: policy?.genericCategoryLabel || 'OTHERS'
-    };
-  }
-
-  const freeDays = policy ? toNum(policy.monthlyFreeUnpaidLeaves ?? 1) : 1;
-  const excessUnpaidDays = Math.max(0, totalUnpaidDays - freeDays);
-
-  if (excessUnpaidDays === 0) {
-    return {
       totalUnpaidDays,
       allowedFreeDays: freeDays,
       excessUnpaidDays: 0,
       deductionAmount: 0,
-      ruleApplied: `Within ${freeDays} free unpaid leave allowance`,
+      ruleApplied: isProv 
+        ? 'Within Provisional 1 Paid Leave allowance' 
+        : `Within ${freeDays} paid/free leave allowance`,
       isConfidential: policy?.deductionVisibility === 'GENERIC',
       genericCategoryLabel: policy?.genericCategoryLabel || 'OTHERS',
-      details: `Total ${totalUnpaidDays} unpaid day(s), covered by free allowance.`
+      details: isProv 
+        ? 'Provisional leave covered by 1-day probation allowance.' 
+        : `Covered by 1 day/month paid leave allowance.`
     };
   }
 
@@ -499,72 +516,60 @@ export interface StatutoryDeductionsResult {
 export const evaluateStatutoryContributions = (
   basicSalary: number,
   grossSalary: number,
-  payrollConfig: PayrollSettingsConfig | undefined
+  payrollConfig: PayrollSettingsConfig | undefined,
+  withPf: boolean = true,
+  da: number = 0,
+  conveyance: number = 0,
+  hra: number = 0,
+  attendanceBonus: number = 0,
+  overtime: number = 0
 ): StatutoryDeductionsResult => {
-  let epfDeduction = 0;
-  let epfRule = 'EPF Inactive';
-
-  let esiDeduction = 0;
-  let esiRule = 'ESIC Inactive';
-
   let professionalTax = 0;
+  if (!payrollConfig || payrollConfig.enableProfessionalTax !== false) {
+    professionalTax = payrollConfig?.standardPtAmount || 200;
+  }
 
-  if (payrollConfig) {
-    // 1. PF Evaluation
-    if (payrollConfig.pfPolicy?.active !== false) {
-      const pf = payrollConfig.pfPolicy;
-      if (pf.calculationType === 'FORMULA' && pf.formula) {
-        epfDeduction = evaluateFormula(pf.formula, { BASIC: basicSalary, GROSS: grossSalary });
-        epfRule = `Formula: ${pf.formula}`;
-      } else if (pf.calculationType === 'FIXED_AMOUNT' && pf.fixedAmount) {
-        epfDeduction = pf.fixedAmount;
-        epfRule = `Fixed: ₹${pf.fixedAmount}`;
-      } else {
-        const rate = pf.percentage || 12;
-        const base = pf.calculationBase === 'GROSS' ? grossSalary : basicSalary;
-        epfDeduction = Math.round((base * rate) / 100);
-        epfRule = `${rate}% of ${pf.calculationBase || 'BASIC'}`;
-      }
-    }
+  // Scheme 1: Without PF & ESIC (New Employee / Under 6 Months probation)
+  // PF and ESIC are strictly 0!
+  if (!withPf) {
+    return {
+      epfDeduction: 0,
+      esiDeduction: 0,
+      professionalTax,
+      totalStatutory: professionalTax,
+      epfRule: 'Exempt (New Employee / < 6 Months)',
+      esiRule: 'Exempt (New Employee / < 6 Months)'
+    };
+  }
 
-    // 2. ESIC Evaluation
-    if (payrollConfig.esicPolicy?.active !== false) {
-      const esic = payrollConfig.esicPolicy;
-      const limit = esic.grossSalaryLimit || 21000;
-      if (grossSalary <= limit) {
-        if (esic.formula) {
-          esiDeduction = evaluateFormula(esic.formula, { GROSS: grossSalary, BASIC: basicSalary });
-          esiRule = `Formula: ${esic.formula}`;
-        } else {
-          const rate = esic.percentage || 0.75;
-          esiDeduction = Math.round((grossSalary * rate) / 100);
-          esiRule = `${rate}% of Gross Salary`;
-        }
-      } else {
-        esiRule = `Gross ₹${grossSalary} exceeds wage ceiling ₹${limit}`;
-      }
-    }
+  // Scheme 2: With PF & ESIC (Eligible / > 6 Months)
+  // PF Calculation: (Basic + DA + Conveyance) * 12%
+  const pfBase = basicSalary + da + conveyance;
+  const pfRate = payrollConfig?.pfPolicy?.percentage || 12;
+  const epfDeduction = Math.round((pfBase * pfRate) / 100);
+  const epfRule = `${pfRate}% of Base ₹${pfBase.toLocaleString('en-IN')} (Basic + DA + Conveyance)`;
 
-    // 3. Professional Tax
-    if (payrollConfig.enableProfessionalTax !== false) {
-      professionalTax = payrollConfig.standardPtAmount || 200;
-    }
+  // ESIC Calculation: (Basic + DA + Conveyance + HRA + Attendance Bonus + Overtime) * 0.75%
+  // Applicable only when gross is within statutory ceiling (₹21,000)
+  const esicBase = basicSalary + da + conveyance + hra + attendanceBonus + overtime;
+  const esicLimit = payrollConfig?.esicPolicy?.grossSalaryLimit || 21000;
+  let esiDeduction = 0;
+  let esiRule = '';
+
+  if (grossSalary <= esicLimit || esicBase <= esicLimit) {
+    const esicRate = payrollConfig?.esicPolicy?.percentage || 0.75;
+    esiDeduction = Math.round((esicBase * esicRate) / 100);
+    esiRule = `${esicRate}% of Base ₹${esicBase.toLocaleString('en-IN')}`;
   } else {
-    // Standard defaults
-    epfDeduction = Math.round((basicSalary * 12) / 100);
-    epfRule = '12% of Basic';
-    if (grossSalary <= 21000) {
-      esiDeduction = Math.round((grossSalary * 0.75) / 100);
-      esiRule = '0.75% of Gross';
-    }
-    professionalTax = 200;
+    esiDeduction = 0;
+    esiRule = `Gross ₹${grossSalary.toLocaleString('en-IN')} exceeds wage ceiling ₹${esicLimit.toLocaleString('en-IN')}`;
   }
 
   return {
-    epfDeduction: Math.round(epfDeduction),
-    esiDeduction: Math.round(esiDeduction),
+    epfDeduction,
+    esiDeduction,
     professionalTax,
-    totalStatutory: Math.round(epfDeduction + esiDeduction + professionalTax),
+    totalStatutory: epfDeduction + esiDeduction + professionalTax,
     epfRule,
     esiRule
   };
@@ -612,7 +617,12 @@ export interface FullPayrollCalculationResult {
   year: number;
   basicSalary: number;
   allowances: number;
+  da?: number;
+  conveyance?: number;
+  hra?: number;
+  withPf?: boolean;
   bonus: number;
+  attendanceBonus?: number;
   rewardEarnings: number;
   grossSalary: number;
 
@@ -656,11 +666,11 @@ export const calculateEmployeePayroll = (
   year: number = 2026
 ): FullPayrollCalculationResult => {
   const basic = toNum(employee.basicSalary);
-  const hra = toNum(employee.allowances?.hra);
-  const transport = toNum(employee.allowances?.transport);
-  const medical = toNum(employee.allowances?.medical);
-  const special = toNum(employee.allowances?.special);
-  const allowances = hra + transport + medical + special;
+  const totalCtc = employee.salaryDetails?.monthlyCtc || (basic > 0 ? Math.round(basic / 0.40) : 15000);
+  const da = toNum(employee.allowances?.da ?? employee.salaryDetails?.da ?? Math.round(totalCtc * 0.20));
+  const conveyance = toNum(employee.allowances?.conveyance ?? employee.salaryDetails?.conveyance ?? Math.round(totalCtc * 0.05));
+  const hra = toNum(employee.allowances?.hra ?? employee.salaryDetails?.hra ?? Math.round(totalCtc * 0.35));
+  const allowances = da + conveyance + hra;
   const standardDays = payrollConfig?.standardWorkingDaysPerMonth || 26;
 
   const dailySalary = standardDays > 0 ? basic / standardDays : basic / 26;
@@ -693,13 +703,33 @@ export const calculateEmployeePayroll = (
   // 4. Rewards Evaluation
   const rewardDetails = evaluateEmployeeRewards(employee.employeeId, rewardRecords);
 
+  // Attendance bonus: granted dynamically ONLY when employee achieves 100% attendance
+  const isFullAttendance = presentDays >= standardDays && standardDays > 0 && (leaveDetails.totalUnpaidDays || 0) === 0;
+  const attendanceBonus = isFullAttendance ? 1000 : 0;
+
   const bonus = 0;
-  const grossSalary = basic + allowances + bonus + rewardDetails.totalRewardEarnings;
+  const grossSalary = basic + allowances + attendanceBonus + bonus + rewardDetails.totalRewardEarnings;
+
+  const withPf = employee.withPf !== undefined 
+    ? employee.withPf 
+    : (employee.salaryDetails?.withPf !== undefined 
+        ? employee.salaryDetails.withPf 
+        : (employee.salaryDetails?.salaryScheme ? employee.salaryDetails.salaryScheme === 'WITH_PF' : true));
 
   // 5. Statutory Deductions
-  const statutoryDetails = evaluateStatutoryContributions(basic, grossSalary, payrollConfig);
+  const statutoryDetails = evaluateStatutoryContributions(
+    basic,
+    grossSalary,
+    payrollConfig,
+    withPf,
+    da,
+    conveyance,
+    hra,
+    attendanceBonus,
+    0
+  );
 
-  // 6. Advance Salary / Loan EMI deduction
+  // 6. Advance Salary / Loan EMI deduction ("Others" deduction)
   let scheduledLoanDeduction = 0;
   if (Array.isArray(advanceSalaryRecords)) {
     advanceSalaryRecords.forEach(adv => {
@@ -738,7 +768,12 @@ export const calculateEmployeePayroll = (
     year,
     basicSalary: basic,
     allowances,
+    da,
+    conveyance,
+    hra,
+    withPf,
     bonus,
+    attendanceBonus,
     rewardEarnings: rewardDetails.totalRewardEarnings,
     grossSalary,
 

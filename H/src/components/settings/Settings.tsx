@@ -8,7 +8,6 @@ import {
   CreditCard, 
   Trophy, 
   ShieldAlert, 
-  Search,
   User,
   Banknote,
   ArrowLeft
@@ -21,6 +20,7 @@ import { LeaveManagementSettings } from './LeaveManagementSettings';
 import { PayrollSettings } from './PayrollSettings';
 import { RewardsSettings } from './RewardsSettings';
 import { AdvanceLoanPolicySettings } from './AdvanceLoanPolicySettings';
+import { IntegrationsSettings } from './IntegrationsSettings';
 import { SettingsDashboard } from './SettingsDashboard';
 
 interface SettingsProps {
@@ -139,8 +139,6 @@ export const Settings: React.FC<SettingsProps> = ({ onLogout, initialSection }) 
     return null;
   });
 
-  const [searchQuery, setSearchQuery] = useState('');
-
   // Synchronize when initialSection changes externally
   useEffect(() => {
     if (initialSection) {
@@ -162,6 +160,7 @@ export const Settings: React.FC<SettingsProps> = ({ onLogout, initialSection }) 
       case 'payroll_settings': return 'Payroll Settings';
       case 'rewards_recognition': return 'Rewards & Recognition';
       case 'advance_loan_policy': return 'Advance Salary / Loan Policy';
+      case 'integrations': return '8. Third-Party Enterprise Integrations & APIs';
       default: return 'Settings';
     }
   };
@@ -222,6 +221,8 @@ export const Settings: React.FC<SettingsProps> = ({ onLogout, initialSection }) 
         return <RewardsSettings />;
       case 'advance_loan_policy':
         return <AdvanceLoanPolicySettings />;
+      case 'integrations':
+        return <IntegrationsSettings />;
       default:
         return null;
     }
@@ -232,7 +233,7 @@ export const Settings: React.FC<SettingsProps> = ({ onLogout, initialSection }) 
       {/* If no section is selected (activeSection === null), show the Separate One-by-One Settings Cards List */}
       {activeSection === null ? (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-          {/* Top Banner Card with Search */}
+          {/* Top Banner Card */}
           <div className="welcome-banner-card" style={{
             display: 'flex',
             justifyContent: 'space-between',
@@ -248,32 +249,10 @@ export const Settings: React.FC<SettingsProps> = ({ onLogout, initialSection }) 
                 Configure personal credentials, organizational rules, shift timings, and payroll structures.
               </p>
             </div>
-
-            {/* Quick Search */}
-            <div style={{ position: 'relative', width: '280px' }}>
-              <Search size={15} color="#94A3B8" style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)' }} />
-              <input
-                type="text"
-                placeholder="Search settings..."
-                value={searchQuery}
-                onChange={e => setSearchQuery(e.target.value)}
-                style={{
-                  width: '100%',
-                  padding: '9px 12px 9px 34px',
-                  borderRadius: '10px',
-                  border: '1px solid #E2E8F0',
-                  fontSize: '0.84rem',
-                  backgroundColor: '#FFFFFF',
-                  outline: 'none',
-                  color: '#1E293B',
-                  boxShadow: '0 1px 2px rgba(0,0,0,0.03)'
-                }}
-              />
-            </div>
           </div>
 
           {/* One by One Cards List */}
-          <SettingsDashboard onSelectSection={handleSelectSection} searchQuery={searchQuery} />
+          <SettingsDashboard onSelectSection={handleSelectSection} />
         </div>
       ) : (
         /* If a section is selected, render it SEPARATELY in full-width with ONLY the back arrow icon */

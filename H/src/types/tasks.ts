@@ -14,6 +14,7 @@ export type TaskOverallStatus =
 export type TaskAssigneeStatus = 
   | 'Pending' 
   | 'In Progress' 
+  | 'In Process'
   | 'Under Review' 
   | 'Completed' 
   | 'Blocked';
@@ -86,6 +87,23 @@ export interface TaskUpdateLog {
   updatedAt: string;
 }
 
+export interface TaskDailyReport {
+  id: string;
+  taskId: string;
+  reportDate: string; // YYYY-MM-DD
+  employeeId: string;
+  employeeName: string;
+  employeeAvatar?: string;
+  employeeDepartment?: string;
+  workDoneToday: string;
+  planForTomorrow?: string;
+  blockersOrIssues?: string;
+  hoursSpent?: number;
+  processStatus: TaskAssigneeStatus;
+  submittedAt: string;
+  submittedTo: string[]; // e.g. ['CEO', 'HR Manager', 'Assigner']
+}
+
 export interface TaskComment {
   id: string;
   taskId: string;
@@ -107,6 +125,15 @@ export interface TaskAttachment {
   fileUrl: string;
   uploadedBy: string;
   uploadedAt: string;
+}
+
+export interface TaskLinkItem {
+  id: string;
+  taskId: string;
+  title: string;
+  url: string;
+  addedBy: string;
+  addedAt: string;
 }
 
 export interface TaskTimelineEvent {
@@ -231,8 +258,10 @@ export interface TaskItemEnhanced {
   overallStatus: TaskOverallStatus; // System-derived
   assignees: TaskAssignee[];
   updates: TaskUpdateLog[];
+  dailyReports?: TaskDailyReport[];
   comments: TaskComment[];
   attachments: TaskAttachment[];
+  links?: TaskLinkItem[];
   timeline: TaskTimelineEvent[];
   auditLogs: TaskAuditLog[];
   isReopened?: boolean;

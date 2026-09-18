@@ -14,8 +14,8 @@ import {
 
 export const INITIAL_COMPANY_INFO: CompanyInfo = {
   logoUrl: '',
-  companyName: 'VRM Structures Pvt. Ltd.',
-  legalCompanyName: 'VRM Industrial Structures Private Limited',
+  companyName: 'Businz',
+  legalCompanyName: 'Businz Private Limited',
   companyType: 'Private Limited',
   industry: 'Civil Infrastructure & Construction Engineering',
   registrationNumber: 'U45201TN2018PTC123456',
@@ -28,7 +28,7 @@ export const INITIAL_COMPANY_INFO: CompanyInfo = {
   createdAt: '2026-01-01T09:00:00.000Z',
   createdBy: 'Rajesh Sharma (CEO)',
   updatedAt: '2026-08-15T14:30:00.000Z',
-  updatedBy: 'Ananya Verma (HR)'
+  updatedBy: 'Pavithra (HR)'
 };
 
 export const INITIAL_COMPANY_BRANCHES: CompanyBranch[] = [
@@ -47,7 +47,7 @@ export const INITIAL_COMPANY_BRANCHES: CompanyBranch[] = [
     },
     contactNumber: '+91 44 2250 8891',
     email: 'chennai.ho@vrmstructures.com',
-    branchHr: 'Ananya Verma',
+    branchHr: 'Pavithra',
     workingDays: ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'],
     workingHours: {
       startTime: '09:30',
@@ -97,16 +97,10 @@ export const INITIAL_ORG_STRUCTURE: OrganizationStructure = {
     'Chennai HQ'
   ],
   reportingManagers: [
-    { id: 'EMP-000', name: 'Velmurugan', department: 'HR' },
-    { id: 'EMP-001', name: 'Pavithra', department: 'HR' },
-    { id: 'EMP-008', name: 'Rajesh Kannan', department: 'Sales' },
-    { id: 'EMP-007', name: 'Priya Natarajan', department: 'Accounts' }
+    { id: 'EMP-000', name: 'Velmurugan', department: 'Management' }
   ],
   teams: [
-    { id: 'TM-01', name: 'Executive & HR Team', departmentId: 'HR', leadEmployeeName: 'Pavithra' },
-    { id: 'TM-02', name: 'Commercial Sales Squad', departmentId: 'Sales', leadEmployeeName: 'Rajesh Kannan' },
-    { id: 'TM-03', name: 'Accounts & Auditing', departmentId: 'Accounts', leadEmployeeName: 'Priya Natarajan' },
-    { id: 'TM-04', name: 'Technical Support & Systems', departmentId: 'Technical Support', leadEmployeeName: 'Arvind Babu' }
+    { id: 'TM-01', name: 'Operations Team', departmentId: 'Management', leadEmployeeName: 'Velmurugan' }
   ]
 };
 
@@ -145,9 +139,9 @@ export const DEFAULT_MASTER_ATTENDANCE_POLICIES: AttendancePolicy[] = [
     genericCategoryLabel: 'OTHERS',
 
     createdAt: '2026-01-01T09:00:00.000Z',
-    createdBy: 'Rajesh Sharma (CEO)',
+    createdBy: 'Velmurugan (CEO)',
     updatedAt: '2026-08-01T10:00:00.000Z',
-    updatedBy: 'Ananya Verma (HR)'
+    updatedBy: 'HR Admin'
   },
   {
     id: 'AP-SITE-02',
@@ -177,66 +171,30 @@ export const DEFAULT_MASTER_ATTENDANCE_POLICIES: AttendancePolicy[] = [
     genericCategoryLabel: 'OTHERS',
 
     createdAt: '2026-02-01T09:00:00.000Z',
-    createdBy: 'Ananya Verma (HR)',
+    createdBy: 'Pavithra (HR)',
     updatedAt: '2026-07-15T12:00:00.000Z',
-    updatedBy: 'Ananya Verma (HR)'
+    updatedBy: 'Pavithra (HR)'
   }
 ];
 
-export const INITIAL_ATTENDANCE_CORRECTIONS: AttendanceCorrectionRequest[] = [
-  {
-    id: 'ACR-2026-001',
-    employeeId: 'EMP-001',
-    employeeName: 'Rajesh Sharma',
-    department: 'Management & Executive',
-    date: '2026-08-25',
-    missingType: 'Check In',
-    requestedCheckIn: '09:32',
-    requestedCheckOut: '18:35',
-    reason: 'Biometric face scan portal was undergoing network calibration upon entry.',
-    status: 'Approved',
-    submittedAt: '2026-08-25T10:00:00.000Z',
-    reviewedBy: 'Ananya Verma (HR)',
-    reviewedAt: '2026-08-25T11:30:00.000Z',
-    hrComment: 'Verified with security entry log. Approved at 9:32 AM.',
-    adjustedCheckIn: '09:32'
-  },
-  {
-    id: 'ACR-2026-002',
-    employeeId: 'EMP-002',
-    employeeName: 'Priya Sundaram',
-    department: 'Civil & Structural Engineering',
-    date: '2026-08-28',
-    missingType: 'Full Attendance',
-    requestedCheckIn: '09:20',
-    requestedCheckOut: '18:45',
-    reason: 'Visited metro casting yard site for client structural inspection directly in the morning.',
-    status: 'Pending',
-    submittedAt: '2026-08-28T19:10:00.000Z'
-  }
-];
+export const INITIAL_ATTENDANCE_CORRECTIONS: AttendanceCorrectionRequest[] = [];
 
 export const DEFAULT_MASTER_LEAVE_POLICIES: MasterLeavePolicy[] = [
   {
-    id: 'LP-MASTER-01',
-    policyName: 'Corporate Master Leave & Unpaid Policy 2026',
-    description: 'Provides 1 free unpaid leave per calendar month. Additional unpaid leaves incur 1 day salary deduction.',
+    id: 'LP-MASTER-CONFIRMED',
+    policyName: 'Casual Leave Policy',
+    description: 'Casual Leave (CL): 1 day per month (12 days/year) - Paid. Additional unpaid leaves incur 1 day salary deduction.',
     applicableEmployees: 'ALL',
     applicableDepartments: 'ALL',
     applicableBranches: 'ALL',
+    applicableEmploymentType: 'Confirmed',
     effectiveDate: '2026-01-01',
     status: 'Active',
     version: 1,
 
     leaveTypes: [
-      { id: 'lt-cl', name: 'Casual Leave', isPaid: true, quotaPerYear: 12, description: 'Short planned personal leave', color: '#0E7490' },
-      { id: 'lt-sl', name: 'Sick Leave', isPaid: true, quotaPerYear: 10, description: 'Medical recovery leave', color: '#22C55E' },
-      { id: 'lt-pl', name: 'Paid Leave', isPaid: true, quotaPerYear: 15, description: 'Annual privileged holiday leave', color: '#3B82F6' },
-      { id: 'lt-ul', name: 'Unpaid Leave', isPaid: false, quotaPerYear: 12, description: 'Loss of pay leave beyond paid quotas', color: '#EF4444' },
-      { id: 'lt-el', name: 'Earned Leave', isPaid: true, quotaPerYear: 18, description: 'Accrued long leave', color: '#8B5CF6' },
-      { id: 'lt-ml', name: 'Maternity Leave', isPaid: true, quotaPerYear: 180, description: 'Statutory maternity leave for women staff', color: '#EC4899' },
-      { id: 'lt-pt', name: 'Paternity Leave', isPaid: true, quotaPerYear: 15, description: 'New father support leave', color: '#14B8A6' },
-      { id: 'lt-co', name: 'Compensatory Leave', isPaid: true, quotaPerYear: 12, description: 'Comp-off for weekend project work', color: '#F59E0B' }
+      { id: 'lt-cl', name: 'Casual Leave (CL)', isPaid: true, quotaPerYear: 12, description: '1 Day Paid Casual Leave per month', color: '#0E7490' },
+      { id: 'lt-ul', name: 'Unpaid Leave (LWP)', isPaid: false, quotaPerYear: 12, description: 'Loss of pay leave beyond monthly paid quota', color: '#EF4444' }
     ],
 
     monthlyFreeUnpaidLeaves: 1,
@@ -250,36 +208,99 @@ export const DEFAULT_MASTER_LEAVE_POLICIES: MasterLeavePolicy[] = [
     genericCategoryLabel: 'OTHERS',
 
     createdAt: '2026-01-01T09:00:00.000Z',
-    createdBy: 'Rajesh Sharma (CEO)',
+    createdBy: 'HR Admin',
     updatedAt: '2026-08-01T10:00:00.000Z',
-    updatedBy: 'Ananya Verma (HR)'
+    updatedBy: 'HR Admin'
+  },
+  {
+    id: 'LP-MASTER-SICK',
+    policyName: 'Sick Leave Policy',
+    description: 'Sick Leave (SL): 6 days per year - Paid. For medical recovery and health reasons.',
+    applicableEmployees: 'ALL',
+    applicableDepartments: 'ALL',
+    applicableBranches: 'ALL',
+    applicableEmploymentType: 'Confirmed',
+    effectiveDate: '2026-01-01',
+    status: 'Active',
+    version: 1,
+
+    leaveTypes: [
+      { id: 'lt-sl', name: 'Sick Leave (SL)', isPaid: true, quotaPerYear: 6, description: '6 Days Paid Sick Leave per year', color: '#0E7490' },
+      { id: 'lt-ul-sl', name: 'Unpaid Leave (LWP)', isPaid: false, quotaPerYear: 12, description: 'Loss of pay leave beyond quota', color: '#EF4444' }
+    ],
+
+    monthlyFreeUnpaidLeaves: 1,
+    deductionRuleType: 'DAILY_SALARY',
+    dailySalaryMultiplier: 1,
+    customFormula: '(DAILY_SALARY * UNPAID_DAYS)',
+
+    approvalFlow: 'EMPLOYEE_HR',
+
+    deductionVisibility: 'GENERIC',
+    genericCategoryLabel: 'OTHERS',
+
+    createdAt: '2026-01-01T09:00:00.000Z',
+    createdBy: 'HR Admin',
+    updatedAt: '2026-08-01T10:00:00.000Z',
+    updatedBy: 'HR Admin'
+  },
+  {
+    id: 'LP-MASTER-PROVISIONAL',
+    policyName: 'Provisional Leave Policy',
+    description: 'Provisional Paid Leave: 1 day total during the first 3 months of probation - Paid.',
+    applicableEmployees: 'ALL',
+    applicableDepartments: 'ALL',
+    applicableBranches: 'ALL',
+    applicableEmploymentType: 'Provisional',
+    effectiveDate: '2026-01-01',
+    status: 'Active',
+    version: 1,
+
+    leaveTypes: [
+      { id: 'lt-pl-prov', name: 'Provisional Paid Leave', isPaid: true, quotaPerYear: 1, description: '1 Paid Leave total during initial 3-month probation', color: '#0E7490' },
+      { id: 'lt-ul-prov', name: 'Unpaid Leave (LWP)', isPaid: false, quotaPerYear: 12, description: 'Loss of pay leave beyond 1 provisional paid day', color: '#EF4444' }
+    ],
+
+    monthlyFreeUnpaidLeaves: 0,
+    deductionRuleType: 'DAILY_SALARY',
+    dailySalaryMultiplier: 1,
+    customFormula: '(DAILY_SALARY * UNPAID_DAYS)',
+
+    approvalFlow: 'EMPLOYEE_HR',
+
+    deductionVisibility: 'GENERIC',
+    genericCategoryLabel: 'OTHERS',
+
+    createdAt: '2026-01-01T09:00:00.000Z',
+    createdBy: 'HR Admin',
+    updatedAt: '2026-08-01T10:00:00.000Z',
+    updatedBy: 'HR Admin'
   }
 ];
 
 export const INITIAL_PAYROLL_CONFIG: PayrollSettingsConfig = {
   components: [
-    { id: 'c-hra', name: 'House Rent Allowance (HRA)', code: 'HRA', type: 'EARNING', calculationMethod: 'PERCENTAGE', defaultValue: 40, percentageBase: 'BASIC', isStatutory: false, active: true, isConfidential: false, description: '40% of individual employee Basic salary for housing' },
-    { id: 'c-conv', name: 'Conveyance Allowance', code: 'CONV', type: 'EARNING', calculationMethod: 'FIXED_AMOUNT', defaultValue: 1600, isStatutory: false, active: true, isConfidential: false, description: 'Monthly transportation stipend' },
-    { id: 'c-med', name: 'Medical Allowance', code: 'MED', type: 'EARNING', calculationMethod: 'FIXED_AMOUNT', defaultValue: 1250, isStatutory: false, active: true, isConfidential: false, description: 'Tax-exempt medical reimbursement allowance' },
-    { id: 'c-spec', name: 'Special Allowance', code: 'SPEC', type: 'EARNING', calculationMethod: 'FIXED_AMOUNT', defaultValue: 2500, isStatutory: false, active: true, isConfidential: false, description: 'Residual balancing allowance component' },
-    { id: 'c-bonus', name: 'Performance Bonus', code: 'BONUS', type: 'EARNING', calculationMethod: 'FIXED_AMOUNT', defaultValue: 0, isStatutory: false, active: true, isConfidential: false, description: 'Variable project performance payout' },
-    { id: 'c-reward', name: 'Rewards & Recognition', code: 'REWARD', type: 'EARNING', calculationMethod: 'FIXED_AMOUNT', defaultValue: 0, isStatutory: false, active: true, isConfidential: false, description: 'Monthly award earnings routed from Settings Rewards' },
+    // 1. Official Earnings (100% Total CTC Breakdown)
+    { id: 'c-basic', name: 'Basic Salary', code: 'BASIC', type: 'EARNING', calculationMethod: 'PERCENTAGE', defaultValue: 40, percentageBase: 'CTC', isStatutory: true, active: true, isConfidential: false, description: '40% of Total Monthly CTC' },
+    { id: 'c-da', name: 'Dearness Allowance (DA)', code: 'DA', type: 'EARNING', calculationMethod: 'PERCENTAGE', defaultValue: 20, percentageBase: 'CTC', isStatutory: true, active: true, isConfidential: false, description: '20% of Total Monthly CTC' },
+    { id: 'c-hra', name: 'House Rent Allowance (HRA)', code: 'HRA', type: 'EARNING', calculationMethod: 'PERCENTAGE', defaultValue: 35, percentageBase: 'CTC', isStatutory: false, active: true, isConfidential: false, description: '35% of Total Monthly CTC' },
+    { id: 'c-conv', name: 'Conveyance Allowance', code: 'CONV', type: 'EARNING', calculationMethod: 'PERCENTAGE', defaultValue: 5, percentageBase: 'CTC', isStatutory: false, active: true, isConfidential: false, description: '5% of Total Monthly CTC' },
 
-    // Deductions
-    { id: 'c-pf', name: 'Employee Provident Fund (EPF)', code: 'EPF', type: 'DEDUCTION', calculationMethod: 'PERCENTAGE', defaultValue: 12, percentageBase: 'BASIC', isStatutory: true, active: true, isConfidential: false, description: 'Statutory 12% PF contribution under EPFO rules' },
-    { id: 'c-esi', name: 'Employees State Insurance (ESIC)', code: 'ESIC', type: 'DEDUCTION', calculationMethod: 'PERCENTAGE', defaultValue: 0.75, percentageBase: 'GROSS', isStatutory: true, active: true, isConfidential: false, description: 'Statutory 0.75% contribution for wage <= ₹21,000' },
+    // 2. Official Deductions & Statutory Contributions
+    { id: 'c-pf', name: 'Employee Provident Fund (EPF)', code: 'EPF', type: 'DEDUCTION', calculationMethod: 'FORMULA', defaultValue: 12, formula: '((BASIC + DA + CONV) * 12) / 100', isStatutory: true, active: true, isConfidential: false, description: '12% of PF Base (Basic + DA + Conveyance) for With PF staff; Exempt for < 6 months' },
+    { id: 'c-esi', name: 'Employees State Insurance (ESIC)', code: 'ESIC', type: 'DEDUCTION', calculationMethod: 'PERCENTAGE', defaultValue: 0.75, percentageBase: 'GROSS', isStatutory: true, active: true, isConfidential: false, description: '0.75% of Gross for wages <= ₹21,000 for With PF staff; Exempt for < 6 months' },
     { id: 'c-pt', name: 'Professional Tax (PT)', code: 'PT', type: 'DEDUCTION', calculationMethod: 'FIXED_AMOUNT', defaultValue: 200, isStatutory: true, active: true, isConfidential: false, description: 'State government professional tax deduction' },
     { id: 'c-adv', name: 'Advance Salary Recovery', code: 'ADV_REC', type: 'DEDUCTION', calculationMethod: 'FIXED_AMOUNT', defaultValue: 0, isStatutory: false, active: true, isConfidential: false, description: 'Monthly EMI recovery for approved advance salary' },
     { id: 'c-late', name: 'Late Attendance Deduction', code: 'LATE_DED', type: 'DEDUCTION', calculationMethod: 'FORMULA', defaultValue: 0, formula: '(LATE_COUNT * 100)', isStatutory: false, active: true, isConfidential: true, description: 'Deduction generated dynamically from Attendance Policy' },
-    { id: 'c-lop', name: 'Unpaid Leave Deduction', code: 'LOP_DED', type: 'DEDUCTION', calculationMethod: 'FORMULA', defaultValue: 0, formula: '(DAILY_SALARY * UNPAID_DAYS)', isStatutory: false, active: true, isConfidential: true, description: 'Deduction calculated dynamically from Leave Policy' }
+    { id: 'c-lop', name: 'Unpaid Leave Deduction', code: 'LOP_DED', type: 'DEDUCTION', calculationMethod: 'FORMULA', defaultValue: 0, formula: '(DAILY_SALARY * UNPAID_DAYS)', isStatutory: false, active: true, isConfidential: true, description: 'Deduction calculated dynamically from Leave Policy (1x Daily Salary)' }
   ],
 
   pfPolicy: {
     active: true,
-    calculationType: 'PERCENTAGE',
+    calculationType: 'FORMULA',
     percentage: 12,
-    calculationBase: 'BASIC',
-    formula: 'BASIC * 12 / 100',
+    calculationBase: 'CUSTOM',
+    formula: '(BASIC + DA + CONV) * 12 / 100',
     effectiveDate: '2026-01-01',
     version: 1
   },
@@ -312,7 +333,7 @@ export const INITIAL_PAYROLL_CONFIG: PayrollSettingsConfig = {
   enableProfessionalTax: true,
   standardPtAmount: 200,
   updatedAt: '2026-08-01T10:00:00.000Z',
-  updatedBy: 'Ananya Verma (HR)'
+  updatedBy: 'Pavithra (HR)'
 };
 
 export const INITIAL_REWARD_POLICIES: RewardPolicy[] = [
@@ -330,79 +351,12 @@ export const INITIAL_REWARD_POLICIES: RewardPolicy[] = [
     status: 'Active',
     version: 1,
     createdAt: '2026-01-01T09:00:00.000Z',
-    createdBy: 'Ananya Verma (HR)',
+    createdBy: 'Pavithra (HR)',
     updatedAt: '2026-09-10T10:00:00.000Z',
-    updatedBy: 'Ananya Verma (HR)'
+    updatedBy: 'Pavithra (HR)'
   }
 ];
 
-export const INITIAL_EMPLOYEE_REWARDS: EmployeeRewardRecord[] = [
-  {
-    id: 'ERR-2026-08-01',
-    rewardPolicyId: 'RP-ATT-01',
-    rewardName: 'Monthly 100% Attendance & Punctuality Reward',
-    rewardType: 'Attendance Reward',
-    employeeId: 'EMP-001',
-    employeeName: 'Rajesh Sharma',
-    department: 'Management & Executive',
-    valueType: 'FIXED_AMOUNT',
-    amount: 1000,
-    grantedDate: '2026-08-31',
-    grantedBy: 'HR Administration',
-    addToPayroll: true,
-    payrollStatus: 'Pending',
-    notes: 'Achieved 100% monthly attendance with 0 leaves, 0 absences, and 0 late check-ins.'
-  }
-];
+export const INITIAL_EMPLOYEE_REWARDS: EmployeeRewardRecord[] = [];
 
-export const INITIAL_POLICY_AUDIT_LOGS: PolicyAuditLog[] = [
-  {
-    id: 'LOG-001',
-    policyCategory: 'Company Details',
-    policyId: 'COMP-ROOT',
-    policyName: 'VRM Industrial Structures Private Limited',
-    action: 'EDIT',
-    performedBy: 'Rajesh Sharma',
-    performedByRole: 'CEO',
-    timestamp: '2026-08-15 14:30:00',
-    changeSummary: 'Updated official GSTIN and registered corporate email address.',
-    oldValues: { officialEmail: 'contact@vrmstructures.com' },
-    newValues: { officialEmail: 'corporate@vrmstructures.com' }
-  },
-  {
-    id: 'LOG-002',
-    policyCategory: 'Attendance & Time',
-    policyId: 'AP-STD-01',
-    policyName: 'General Corporate Late Attendance & Grace Policy',
-    action: 'CREATE',
-    performedBy: 'Ananya Verma',
-    performedByRole: 'HR',
-    timestamp: '2026-08-01 10:00:00',
-    changeSummary: 'Created tiered count-based late deduction policy (1-3 free, 4-5 ₹100, 6+ ₹200).',
-    newValues: { graceTimeMinutes: 10, lateRuleType: 'COUNT_BASED' }
-  },
-  {
-    id: 'LOG-003',
-    policyCategory: 'Leave Management',
-    policyId: 'LP-MASTER-01',
-    policyName: 'Corporate Master Leave & Unpaid Policy 2026',
-    action: 'CREATE',
-    performedBy: 'Ananya Verma',
-    performedByRole: 'HR',
-    timestamp: '2026-08-01 10:05:00',
-    changeSummary: 'Enacted 1 monthly free unpaid leave with daily salary deduction thereafter.',
-    newValues: { monthlyFreeUnpaidLeaves: 1, deductionRuleType: 'DAILY_SALARY' }
-  },
-  {
-    id: 'LOG-004',
-    policyCategory: 'Rewards & Recognition',
-    policyId: 'RP-EOM-01',
-    policyName: 'Employee of the Month',
-    action: 'CREATE',
-    performedBy: 'Rajesh Sharma',
-    performedByRole: 'CEO',
-    timestamp: '2026-08-01 10:15:00',
-    changeSummary: 'Created ₹5,000 monthly reward policy connected to payroll earnings.',
-    newValues: { amountValue: 5000, addToPayroll: true }
-  }
-];
+export const INITIAL_POLICY_AUDIT_LOGS: PolicyAuditLog[] = [];

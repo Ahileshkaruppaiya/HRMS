@@ -159,6 +159,8 @@ async function request<T>(endpoint: string, options: RequestInit = {}): Promise<
 
   if (token) {
     headers['Authorization'] = `Bearer ${token}`;
+  } else if (import.meta.env.DEV) {
+    headers['x-dev-mock-auth'] = 'true';
   }
 
   const response = await fetch(`${API_BASE}${endpoint}`, {

@@ -13,7 +13,6 @@ import {
   XCircle, 
   UserCheck, 
   ShieldCheck, 
-  Trash2, 
   X, 
   Building2,
   Calendar,
@@ -22,13 +21,64 @@ import {
   PackageCheck,
   User
 } from 'lucide-react';
+import { StandardFloatingActionBar } from '../common/StandardFloatingActionBar';
+import { formatDateDDMMYYYY } from '../../utils/dateUtils';
 
 export const AssetManagement: React.FC = () => {
   const { assets, addAsset, assignAsset, deleteAsset, employees, currentUser } = useHRMS();
 
+  const isEmployeeRole = currentUser.role === 'Employee' || currentUser.role === 'Assignee';
+  const canManageAssets = currentUser.role === 'Super Admin' || currentUser.role === 'HR Admin';
+
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [categoryFilter, setCategoryFilter] = useState<string>('All');
   const [statusFilter, setStatusFilter] = useState<string>('All');
+
+  // Strict User Scoping: In employee view, strictly match assigned assets
+  const isAssetAssignedToUser = (asset: AssetItem): boolean => {
+    const userEmpId = (currentUser.employeeId || currentUser.id || '').trim().toLowerCase();
+    const userName = (currentUser.name || '').trim().toLowerCase();
+    const assetEmpId = (asset.assignedEmployeeId || '').trim().toLowerCase();
+    const assetEmpName = (asset.assignedEmployeeName || '').trim().toLowerCase();
+
+    // Direct Employee ID match
+    if (userEmpId && assetEmpId && userEmpId === assetEmpId) return true;
+    
+    // Direct Name match
+    if (userName && assetEmpName) {
+      if (assetEmpName === userName) return true;
+      if (assetEmpName.includes(userName) || userName.includes(assetEmpName)) return true;
+    }
+
+    // Demo fallback for generic EMP-USER / Staff Employee / Floor Employee -> defaults to EMP-008
+    if ((userEmpId === 'emp-user' || userName.includes('staff') || userName.includes('floor')) && assetEmpId === 'emp-008') {
+      return true;
+    }
+
+    return false;
+  };
+
+  const scopedAssets = isEmployeeRole 
+    ? assets.filter(isAssetAssignedToUser)
+    : assets;
+
+  // Multi-row selection state
+  const [selectedAssetIds, setSelectedAssetIds] = useState<string[]>([]);
+
+  const handleToggleAsset = (id: string) => {
+    setSelectedAssetIds(prev => 
+      prev.includes(id) ? prev.filter(aId => aId !== id) : [...prev, id]
+    );
+  };
+
+  const handleToggleSelectAll = () => {
+    if (filteredAssets.length > 0 && filteredAssets.every(a => selectedAssetIds.includes(a.id))) {
+      setSelectedAssetIds(prev => prev.filter(id => !filteredAssets.some(a => a.id === id)));
+    } else {
+      const pageIds = filteredAssets.map(a => a.id);
+      setSelectedAssetIds(prev => Array.from(new Set([...prev, ...pageIds])));
+    }
+  };
 
   // Modals
   const [showAddModal, setShowAddModal] = useState(false);
@@ -50,8 +100,6 @@ export const AssetManagement: React.FC = () => {
   // Assign Asset Form
   const [assignEmployeeId, setAssignEmployeeId] = useState<string>(employees[0]?.employeeId || '');
 
-  const canManageAssets = currentUser.role === 'Super Admin' || currentUser.role === 'HR Admin';
-
   const categories = [
     'All',
     'Laptops & Computers',
@@ -61,9 +109,9 @@ export const AssetManagement: React.FC = () => {
     'Peripherals & Accessories'
   ];
 
-  const statuses = ['All', 'Assigned', 'Available', 'Under Maintenance', 'Retired'];
+  const statuses = ['All', 'Assigned', 'Available', 'Under Maintenance'];
 
-  const filteredAssets = assets.filter(a => {
+  const filteredAssets = scopedAssets.filter(a => {
     const matchesCategory = categoryFilter === 'All' || a.category === categoryFilter;
     const matchesStatus = statusFilter === 'All' || a.status === statusFilter;
     const matchesSearch = !searchQuery.trim() || 
@@ -79,6 +127,8 @@ export const AssetManagement: React.FC = () => {
   const assignedCount = assets.filter(a => a.status === 'Assigned').length;
   const availableCount = assets.filter(a => a.status === 'Available').length;
   const maintenanceCount = assets.filter(a => a.status === 'Under Maintenance').length;
+
+  const userTotalCost = scopedAssets.reduce((sum, a) => sum + toNum(a.purchaseCost), 0);
 
   const handleAddSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -133,9 +183,11 @@ export const AssetManagement: React.FC = () => {
       {/* Page Header */}
       <div className="page-header">
         <div className="page-title-group">
-          <h1>Asset Management & Hardware Inventory</h1>
+          <h1>{isEmployeeRole ? 'My Assigned Assets & Hardware' : 'Asset Management & Hardware Inventory'}</h1>
           <p className="page-subtitle">
-            Track company hardware allocations, laptop inventory, employee assignments, purchase costs, and warranty status
+            {isEmployeeRole 
+              ? 'View corporate devices, laptops, and field equipment currently assigned to you' 
+              : 'Track company hardware allocations, laptop inventory, employee assignments, purchase costs, and warranty status'}
           </p>
         </div>
 
@@ -157,65 +209,137 @@ export const AssetManagement: React.FC = () => {
 
       {/* KPI Overview Grid */}
       <div className="kpi-grid" style={{ marginBottom: '24px' }}>
-        <div className="kpi-card">
-          <div className="kpi-card-header">
-            <span>Total Corporate Assets</span>
-            <div className="kpi-icon-wrapper blue">
-              <Laptop size={22} />
+        {isEmployeeRole ? (
+          <>
+            <div className="kpi-card">
+              <div className="kpi-card-header">
+                <span>My Assigned Devices</span>
+                <div className="kpi-icon-wrapper blue">
+                  <Laptop size={22} />
+                </div>
+              </div>
+              <div className="kpi-card-body">
+                <div className="kpi-value">{scopedAssets.length}</div>
+              </div>
+              <div className="kpi-footer">
+                <span style={{ color: '#0891b2', fontWeight: 700 }}>
+                  Total Value: ₹{userTotalCost.toLocaleString('en-IN')}
+                </span>
+              </div>
             </div>
-          </div>
-          <div className="kpi-card-body">
-            <div className="kpi-value">{assets.length}</div>
-          </div>
-          <div className="kpi-footer">
-            <span style={{ color: '#0891b2', fontWeight: 700 }}>Total Value: ₹{totalCost.toLocaleString('en-IN')}</span>
-          </div>
-        </div>
 
-        <div className="kpi-card">
-          <div className="kpi-card-header">
-            <span>Assigned to Staff</span>
-            <div className="kpi-icon-wrapper emerald">
-              <PackageCheck size={22} />
+            <div className="kpi-card">
+              <div className="kpi-card-header">
+                <span>Allocation Status</span>
+                <div className="kpi-icon-wrapper emerald">
+                  <PackageCheck size={22} />
+                </div>
+              </div>
+              <div className="kpi-card-body">
+                <div className="kpi-value">{scopedAssets.filter(a => a.status === 'Assigned').length}</div>
+              </div>
+              <div className="kpi-footer">
+                <span className="kpi-trend-up">In Active Use</span>
+              </div>
             </div>
-          </div>
-          <div className="kpi-card-body">
-            <div className="kpi-value">{assignedCount}</div>
-          </div>
-          <div className="kpi-footer">
-            <span className="kpi-trend-up">In Active Use</span>
-          </div>
-        </div>
 
-        <div className="kpi-card">
-          <div className="kpi-card-header">
-            <span>Available In Stock</span>
-            <div className="kpi-icon-wrapper purple">
-              <CheckCircle2 size={22} />
+            <div className="kpi-card">
+              <div className="kpi-card-header">
+                <span>Hardware Condition</span>
+                <div className="kpi-icon-wrapper purple">
+                  <CheckCircle2 size={22} />
+                </div>
+              </div>
+              <div className="kpi-card-body">
+                <div className="kpi-value">
+                  {scopedAssets.filter(a => a.condition === 'Good' || a.condition === 'New').length}
+                </div>
+              </div>
+              <div className="kpi-footer">
+                <span style={{ color: '#7c3aed', fontWeight: 600 }}>Good / Pristine Working Order</span>
+              </div>
             </div>
-          </div>
-          <div className="kpi-card-body">
-            <div className="kpi-value">{availableCount}</div>
-          </div>
-          <div className="kpi-footer">
-            <span style={{ color: '#7c3aed', fontWeight: 600 }}>Ready for Allocation</span>
-          </div>
-        </div>
 
-        <div className="kpi-card">
-          <div className="kpi-card-header">
-            <span>Under Maintenance</span>
-            <div className="kpi-icon-wrapper amber">
-              <Wrench size={22} />
+            <div className="kpi-card">
+              <div className="kpi-card-header">
+                <span>Warranty Protected</span>
+                <div className="kpi-icon-wrapper amber">
+                  <ShieldCheck size={22} />
+                </div>
+              </div>
+              <div className="kpi-card-body">
+                <div className="kpi-value">
+                  {scopedAssets.filter(a => a.warrantyExpiry && new Date(a.warrantyExpiry) >= new Date()).length}
+                </div>
+              </div>
+              <div className="kpi-footer">
+                <span style={{ color: '#d97706', fontWeight: 600 }}>Covered Under Corporate AMC</span>
+              </div>
             </div>
-          </div>
-          <div className="kpi-card-body">
-            <div className="kpi-value">{maintenanceCount}</div>
-          </div>
-          <div className="kpi-footer">
-            <span style={{ color: '#d97706', fontWeight: 600 }}>Service / Repairs</span>
-          </div>
-        </div>
+          </>
+        ) : (
+          <>
+            <div className="kpi-card">
+              <div className="kpi-card-header">
+                <span>Total Corporate Assets</span>
+                <div className="kpi-icon-wrapper blue">
+                  <Laptop size={22} />
+                </div>
+              </div>
+              <div className="kpi-card-body">
+                <div className="kpi-value">{assets.length}</div>
+              </div>
+              <div className="kpi-footer">
+                <span style={{ color: '#0891b2', fontWeight: 700 }}>Total Value: ₹{totalCost.toLocaleString('en-IN')}</span>
+              </div>
+            </div>
+
+            <div className="kpi-card">
+              <div className="kpi-card-header">
+                <span>Assigned to Staff</span>
+                <div className="kpi-icon-wrapper emerald">
+                  <PackageCheck size={22} />
+                </div>
+              </div>
+              <div className="kpi-card-body">
+                <div className="kpi-value">{assignedCount}</div>
+              </div>
+              <div className="kpi-footer">
+                <span className="kpi-trend-up">In Active Use</span>
+              </div>
+            </div>
+
+            <div className="kpi-card">
+              <div className="kpi-card-header">
+                <span>Available In Stock</span>
+                <div className="kpi-icon-wrapper purple">
+                  <CheckCircle2 size={22} />
+                </div>
+              </div>
+              <div className="kpi-card-body">
+                <div className="kpi-value">{availableCount}</div>
+              </div>
+              <div className="kpi-footer">
+                <span style={{ color: '#7c3aed', fontWeight: 600 }}>Ready for Allocation</span>
+              </div>
+            </div>
+
+            <div className="kpi-card">
+              <div className="kpi-card-header">
+                <span>Under Maintenance</span>
+                <div className="kpi-icon-wrapper amber">
+                  <Wrench size={22} />
+                </div>
+              </div>
+              <div className="kpi-card-body">
+                <div className="kpi-value">{maintenanceCount}</div>
+              </div>
+              <div className="kpi-footer">
+                <span style={{ color: '#d97706', fontWeight: 600 }}>Service / Repairs</span>
+              </div>
+            </div>
+          </>
+        )}
       </div>
 
       {/* Filter Bar */}
@@ -267,22 +391,6 @@ export const AssetManagement: React.FC = () => {
             </div>
           </div>
 
-          <div style={{
-            display: 'inline-flex',
-            alignItems: 'center',
-            gap: '6px',
-            backgroundColor: '#ecfeff',
-            border: '1px solid #a5f3fc',
-            padding: '5px 12px',
-            borderRadius: '99px',
-            fontSize: '0.78rem',
-            color: '#0891b2',
-            fontWeight: 600,
-            whiteSpace: 'nowrap'
-          }}>
-            <span style={{ width: '6px', height: '6px', borderRadius: '50%', backgroundColor: '#155DFC' }}></span>
-            Showing <strong>{filteredAssets.length}</strong> of {assets.length} Assets
-          </div>
 
         </div>
       </div>      {/* Asset Table Container */}
@@ -290,6 +398,17 @@ export const AssetManagement: React.FC = () => {
         <table className="hrms-table" style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'auto' }}>
           <thead>
             <tr style={{ backgroundColor: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
+              {canManageAssets && (
+                <th style={{ width: '40px', minWidth: '40px', textAlign: 'center', padding: '12px 10px' }}>
+                  <input
+                    type="checkbox"
+                    checked={filteredAssets.length > 0 && filteredAssets.every(a => selectedAssetIds.includes(a.id))}
+                    onChange={handleToggleSelectAll}
+                    style={{ accentColor: '#0E7490', cursor: 'pointer', width: '16px', height: '16px' }}
+                    aria-label="Select all assets"
+                  />
+                </th>
+              )}
               <th style={{ padding: '12px 10px', fontSize: '0.7rem', fontWeight: 700, color: '#64748b', letterSpacing: '0.04em', textTransform: 'uppercase', whiteSpace: 'nowrap' }}>
                 Asset Tag & Device Name
               </th>
@@ -299,9 +418,15 @@ export const AssetManagement: React.FC = () => {
               <th style={{ padding: '12px 10px', fontSize: '0.7rem', fontWeight: 700, color: '#64748b', letterSpacing: '0.04em', textTransform: 'uppercase', whiteSpace: 'nowrap' }}>
                 Serial Number
               </th>
-              <th style={{ padding: '12px 10px', fontSize: '0.7rem', fontWeight: 700, color: '#64748b', letterSpacing: '0.04em', textTransform: 'uppercase', whiteSpace: 'nowrap' }}>
-                Assigned Employee
-              </th>
+              {!isEmployeeRole ? (
+                <th style={{ padding: '12px 10px', fontSize: '0.7rem', fontWeight: 700, color: '#64748b', letterSpacing: '0.04em', textTransform: 'uppercase', whiteSpace: 'nowrap' }}>
+                  Assigned Employee
+                </th>
+              ) : (
+                <th style={{ padding: '12px 10px', fontSize: '0.7rem', fontWeight: 700, color: '#64748b', letterSpacing: '0.04em', textTransform: 'uppercase', whiteSpace: 'nowrap' }}>
+                  Allocation Date
+                </th>
+              )}
               <th style={{ padding: '12px 10px', fontSize: '0.7rem', fontWeight: 700, color: '#64748b', letterSpacing: '0.04em', textTransform: 'uppercase', textAlign: 'center', whiteSpace: 'nowrap' }}>
                 Condition
               </th>
@@ -318,16 +443,46 @@ export const AssetManagement: React.FC = () => {
           <tbody>
             {filteredAssets.length === 0 ? (
               <tr>
-                <td colSpan={7} style={{ textAlign: 'center', padding: '45px', color: 'var(--text-muted)' }}>
-                  No corporate assets found matching current filters.
+                <td colSpan={canManageAssets ? 8 : 6} style={{ textAlign: 'center', padding: '45px', color: 'var(--text-muted)' }}>
+                  <Laptop size={36} style={{ opacity: 0.3, margin: '0 auto 8px', display: 'block' }} />
+                  <div>
+                    {isEmployeeRole 
+                      ? 'No corporate devices or hardware currently assigned to your profile.' 
+                      : 'No corporate assets found matching current filters.'}
+                  </div>
+                  {isEmployeeRole && (
+                    <div style={{ fontSize: '0.75rem', color: '#94a3b8', marginTop: '4px' }}>
+                      Contact IT Administration or HR if you require an equipment allocation.
+                    </div>
+                  )}
                 </td>
               </tr>
             ) : (
               filteredAssets.map(asset => {
                 const assignedEmp = employees.find(e => e.employeeId === asset.assignedEmployeeId);
+                const isSelected = selectedAssetIds.includes(asset.id);
 
                 return (
-                  <tr key={asset.id} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                  <tr 
+                    key={asset.id} 
+                    style={{ 
+                      borderBottom: '1px solid #f1f5f9',
+                      backgroundColor: isSelected ? '#ECFEFF' : undefined,
+                      borderLeft: isSelected ? '4px solid #0E7490' : undefined,
+                      transition: 'background-color 0.15s ease'
+                    }}
+                  >
+                    {canManageAssets && (
+                      <td style={{ textAlign: 'center', verticalAlign: 'middle', padding: '10px 10px', width: '40px' }} onClick={e => e.stopPropagation()}>
+                        <input
+                          type="checkbox"
+                          checked={isSelected}
+                          onChange={() => handleToggleAsset(asset.id)}
+                          style={{ accentColor: '#0E7490', cursor: 'pointer', width: '16px', height: '16px' }}
+                          aria-label={`Select asset ${asset.assetTag}`}
+                        />
+                      </td>
+                    )}
                     {/* 1. Asset Tag & Device Name */}
                     <td style={{ padding: '10px 10px', verticalAlign: 'middle' }}>
                       <div style={{ minWidth: 0 }}>
@@ -392,59 +547,70 @@ export const AssetManagement: React.FC = () => {
                       </div>
                     </td>
 
-                    {/* 4. Assigned Employee */}
-                    <td style={{ padding: '10px 10px', verticalAlign: 'middle', whiteSpace: 'nowrap' }}>
-                      {asset.assignedEmployeeId ? (
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                          {assignedEmp?.avatar ? (
-                            <img
-                              src={assignedEmp.avatar}
-                              alt={asset.assignedEmployeeName}
-                              style={{ width: '28px', height: '28px', borderRadius: '99px', objectFit: 'cover', flexShrink: 0, border: '1.5px solid #e2e8f0' }}
-                            />
-                          ) : (
-                            <div style={{
-                              width: '28px',
-                              height: '28px',
-                              borderRadius: '99px',
-                              backgroundColor: '#eff6ff',
-                              color: '#155DFC',
-                              display: 'flex',
-                              alignItems: 'center',
-                              justifyContent: 'center',
-                              fontWeight: 700,
-                              fontSize: '0.72rem',
-                              flexShrink: 0,
-                              border: '1.5px solid #dbeafe'
-                            }}>
-                              {asset.assignedEmployeeName ? asset.assignedEmployeeName.charAt(0) : 'U'}
-                            </div>
-                          )}
-                          <div style={{ minWidth: 0 }}>
-                            <div style={{ fontWeight: 700, fontSize: '0.82rem', color: '#0f172a', lineHeight: 1.2 }}>
-                              {asset.assignedEmployeeName}
-                            </div>
-                            <div style={{ fontSize: '0.69rem', color: '#64748b', marginTop: '1px' }}>
-                              {asset.assignedDepartment} ({asset.assignedEmployeeId})
+                    {/* 4. Assigned Employee (for HR/CEO) or Allocation Date (for Employee) */}
+                    {!isEmployeeRole ? (
+                      <td style={{ padding: '10px 10px', verticalAlign: 'middle', whiteSpace: 'nowrap' }}>
+                        {asset.assignedEmployeeId ? (
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            {assignedEmp?.avatar ? (
+                              <img
+                                src={assignedEmp.avatar}
+                                alt={asset.assignedEmployeeName}
+                                style={{ width: '28px', height: '28px', borderRadius: '99px', objectFit: 'cover', flexShrink: 0, border: '1.5px solid #e2e8f0' }}
+                              />
+                            ) : (
+                              <div style={{
+                                width: '28px',
+                                height: '28px',
+                                borderRadius: '99px',
+                                backgroundColor: '#eff6ff',
+                                color: '#155DFC',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                fontWeight: 700,
+                                fontSize: '0.72rem',
+                                flexShrink: 0,
+                                border: '1.5px solid #dbeafe'
+                              }}>
+                                {asset.assignedEmployeeName ? asset.assignedEmployeeName.charAt(0) : 'U'}
+                              </div>
+                            )}
+                            <div style={{ minWidth: 0 }}>
+                              <div style={{ fontWeight: 700, fontSize: '0.82rem', color: '#0f172a', lineHeight: 1.2 }}>
+                                {asset.assignedEmployeeName}
+                              </div>
+                              <div style={{ fontSize: '0.69rem', color: '#64748b', marginTop: '1px' }}>
+                                {asset.assignedDepartment} ({asset.assignedEmployeeId})
+                              </div>
                             </div>
                           </div>
+                        ) : (
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            <div style={{ width: '28px', height: '28px', borderRadius: '99px', backgroundColor: '#f1f5f9', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, color: '#94a3b8' }}>
+                              <User size={14} />
+                            </div>
+                            <div>
+                              <div style={{ fontWeight: 600, fontSize: '0.8rem', color: '#64748b', lineHeight: 1.2 }}>
+                                Unassigned
+                              </div>
+                              <div style={{ fontSize: '0.69rem', color: '#94a3b8', marginTop: '1px' }}>
+                                Available in Stock
+                              </div>
+                            </div>
+                          </div>
+                        )}
+                      </td>
+                    ) : (
+                      <td style={{ padding: '10px 10px', verticalAlign: 'middle', whiteSpace: 'nowrap' }}>
+                        <div style={{ fontSize: '0.82rem', fontWeight: 700, color: '#0f172a' }}>
+                          {asset.assignedDate ? formatDateDDMMYYYY(asset.assignedDate) : 'Active Schedule'}
                         </div>
-                      ) : (
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                          <div style={{ width: '28px', height: '28px', borderRadius: '99px', backgroundColor: '#f1f5f9', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, color: '#94a3b8' }}>
-                            <User size={14} />
-                          </div>
-                          <div>
-                            <div style={{ fontWeight: 600, fontSize: '0.8rem', color: '#64748b', lineHeight: 1.2 }}>
-                              Unassigned
-                            </div>
-                            <div style={{ fontSize: '0.69rem', color: '#94a3b8', marginTop: '1px' }}>
-                              Available in Stock
-                            </div>
-                          </div>
+                        <div style={{ fontSize: '0.7rem', color: '#059669', fontWeight: 600 }}>
+                          Assigned to You
                         </div>
-                      )}
-                    </td>
+                      </td>
+                    )}
 
                     {/* Condition */}
 
@@ -507,30 +673,6 @@ export const AssetManagement: React.FC = () => {
                             <UserCheck size={12} />
                             <span>{asset.assignedEmployeeId ? 'Reassign' : 'Assign'}</span>
                           </button>
-
-                          <button
-                            type="button"
-                            className="btn btn-sm"
-                            style={{ 
-                              padding: '4px 7px', 
-                              borderRadius: '6px',
-                              display: 'inline-flex',
-                              alignItems: 'center',
-                              justifyContent: 'center',
-                              backgroundColor: '#fff1f2',
-                              color: '#e11d48',
-                              border: '1px solid #fecaca',
-                              cursor: 'pointer'
-                            }}
-                            onClick={() => {
-                              if (confirm(`Delete asset ${asset.assetTag} (${asset.name})?`)) {
-                                deleteAsset(asset.id);
-                              }
-                            }}
-                            title="Delete asset"
-                          >
-                            <Trash2 size={13} />
-                          </button>
                         </div>
                       </td>
                     )}
@@ -541,6 +683,38 @@ export const AssetManagement: React.FC = () => {
           </tbody>
         </table>
       </div>
+
+      {/* Floating Action Bar per AGENTS.md */}
+      {canManageAssets && (
+        <StandardFloatingActionBar
+          selectedCount={selectedAssetIds.length}
+          onClearSelection={() => setSelectedAssetIds([])}
+          onDelete={() => {
+            if (confirm(`Delete ${selectedAssetIds.length} selected asset(s)?`)) {
+              selectedAssetIds.forEach(id => deleteAsset(id));
+              setSelectedAssetIds([]);
+            }
+          }}
+          customActions={
+            selectedAssetIds.length === 1 ? (
+              <button
+                type="button"
+                className="action-bar-btn"
+                onClick={() => {
+                  const target = filteredAssets.find(a => a.id === selectedAssetIds[0]);
+                  if (target) {
+                    setShowAssignModal(target);
+                    setAssignEmployeeId(target.assignedEmployeeId || employees[0]?.employeeId || '');
+                  }
+                }}
+              >
+                <UserCheck size={14} />
+                <span>Assign / Reassign</span>
+              </button>
+            ) : undefined
+          }
+        />
+      )}
 
       {showAddModal && (
         <div className="modal-overlay">

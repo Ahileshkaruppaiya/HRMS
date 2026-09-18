@@ -5,11 +5,11 @@ import { AuthenticatedUser, UserRole } from '../types/auth.js';
 
 export const authenticateToken = (req: Request, res: Response, next: NextFunction): void => {
   const authHeader = req.headers['authorization'];
-  const token = authHeader && authHeader.split(' ')[1];
+  const token = authHeader && authHeader.startsWith('Bearer ') ? authHeader.split(' ')[1] : null;
 
   if (!token) {
-    // In development mode with frontend React, populate mock session context if header is absent
-    if (env.NODE_ENV === 'development' || !authHeader) {
+    // Only in development or test environment: allow mock session if explicit dev flag is present
+    if ((env.NODE_ENV === 'development' || env.NODE_ENV === 'test') && req.headers['x-dev-mock-auth'] === 'true') {
       req.user = {
         id: 'usr-admin-001',
         email: 'admin@vrmstructures.in',
@@ -24,7 +24,7 @@ export const authenticateToken = (req: Request, res: Response, next: NextFunctio
       success: false,
       error: {
         code: 'UNAUTHORIZED',
-        message: 'Access token required',
+        message: 'Access token required. Please provide a valid Bearer token.',
         details: [],
       },
     });

@@ -28,6 +28,8 @@ import {
 } from 'lucide-react';
 import { EmployeeOtRequestModal } from '../attendance/EmployeeOtRequestModal';
 import { ManualOtEntryModal } from '../attendance/ManualOtEntryModal';
+import { ExportDropdown } from '../common/ExportDropdown';
+import { downloadCSV, downloadExcel, downloadPDF } from '../../utils/exportUtils';
 
 interface OvertimeManagementModuleProps {
   openRequestModal?: boolean;
@@ -288,65 +290,76 @@ export const OvertimeManagementModule: React.FC<OvertimeManagementModuleProps> =
     });
   };
 
-  // CSV Export
-  const handleExportCsv = () => {
-    const headers = [
-      'Request ID',
-      'Employee ID',
-      'Employee Name',
-      'Department',
-      'Date',
-      'Shift End',
-      'Check Out',
-      'Requested OT (Hours)',
-      'Approved OT (Hours)',
-      'Multiplier',
-      'Hourly Rate (INR)',
-      'Calculated Payout (INR)',
-      'Reason',
-      'Work Description',
-      'Status',
-      'Source',
-      'Reviewed By',
-      'Review Remarks'
+  // Overtime Export Data & Handlers
+  const getOvertimeExportData = () => {
+    const columns = [
+      { key: 'id', label: 'Request ID' },
+      { key: 'employeeId', label: 'Employee ID' },
+      { key: 'employeeName', label: 'Employee Name' },
+      { key: 'department', label: 'Department' },
+      { key: 'date', label: 'Date' },
+      { key: 'shiftEnd', label: 'Shift End' },
+      { key: 'actualCheckOut', label: 'Check Out' },
+      { key: 'requestedOtHours', label: 'Requested OT (Hrs)' },
+      { key: 'approvedOtHours', label: 'Approved OT (Hrs)' },
+      { key: 'multiplier', label: 'Multiplier' },
+      { key: 'hourlyRate', label: 'Hourly Rate (₹)' },
+      { key: 'calculatedAmount', label: 'Payout (₹)' },
+      { key: 'status', label: 'Status' },
+      { key: 'source', label: 'Source' },
+      { key: 'reason', label: 'Reason' },
+      { key: 'workDescription', label: 'Work Description' },
+      { key: 'reviewedBy', label: 'Reviewed By' }
     ];
 
-    const rows = filteredList.map(r => [
-      r.id,
-      r.employeeId,
-      `"${r.employeeName}"`,
-      `"${r.department}"`,
-      r.date,
-      r.shiftEnd || '',
-      r.actualCheckOut || '',
-      r.requestedOtHours,
-      r.approvedOtHours,
-      r.multiplier,
-      r.hourlyRate || 0,
-      r.calculatedAmount || 0,
-      `"${r.reason || ''}"`,
-      `"${(r.workDescription || '').replace(/"/g, '""')}"`,
-      r.status,
-      r.source || 'Employee Request',
-      `"${r.reviewedBy || ''}"`,
-      `"${r.reviewRemarks || ''}"`
-    ]);
+    const data = filteredList.map(r => ({
+      id: r.id,
+      employeeId: r.employeeId,
+      employeeName: r.employeeName,
+      department: r.department,
+      date: r.date,
+      shiftEnd: r.shiftEnd || '-',
+      actualCheckOut: r.actualCheckOut || '-',
+      requestedOtHours: r.requestedOtHours,
+      approvedOtHours: r.approvedOtHours,
+      multiplier: r.multiplier,
+      hourlyRate: r.hourlyRate || 0,
+      calculatedAmount: r.calculatedAmount || 0,
+      status: r.status,
+      source: r.source || 'Employee Request',
+      reason: r.reason || '-',
+      workDescription: r.workDescription || '-',
+      reviewedBy: r.reviewedBy || '-'
+    }));
 
-    const csvContent = 'data:text/csv;charset=utf-8,' + [headers.join(','), ...rows.map(e => e.join(','))].join('\n');
-    const encodedUri = encodeURI(csvContent);
-    const link = document.createElement('a');
-    link.setAttribute('href', encodedUri);
-    link.setAttribute('download', `Overtime_Report_${new Date().toISOString().split('T')[0]}.csv`);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+    return { columns, data };
+  };
 
+  const handleExportCsv = () => {
+    const { columns, data } = getOvertimeExportData();
+    downloadCSV(data, `Overtime_Report_${new Date().toISOString().split('T')[0]}`, columns);
     addNotification({
       title: 'Report Downloaded',
       message: `Exported ${filteredList.length} overtime records to CSV.`,
       priority: 'Normal',
       category: 'Attendance'
     });
+  };
+
+  const handleExportExcel = () => {
+    const { columns, data } = getOvertimeExportData();
+    downloadExcel(data, `Overtime_Report_${new Date().toISOString().split('T')[0]}`, columns);
+    addNotification({
+      title: 'Report Downloaded',
+      message: `Exported ${filteredList.length} overtime records to Excel (.xls).`,
+      priority: 'Normal',
+      category: 'Attendance'
+    });
+  };
+
+  const handleExportPdf = () => {
+    const { columns, data } = getOvertimeExportData();
+    downloadPDF(data, 'Overtime Register & Audit Report', `Overtime_Report_${new Date().toISOString().split('T')[0]}`, columns);
   };
 
   // Render Status Badge matching exact system tokens
@@ -469,23 +482,11 @@ export const OvertimeManagementModule: React.FC<OvertimeManagementModuleProps> =
 
         {/* Action buttons matching Dashboard button hierarchy */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
-          <button
-            type="button"
-            className="btn btn-secondary"
-            onClick={handleExportCsv}
-            style={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: '8px',
-              borderRadius: '12px',
-              padding: '9px 16px',
-              fontSize: '0.84rem',
-              fontWeight: 600
-            }}
-          >
-            <Download size={15} color="#475569" />
-            <span>Export CSV</span>
-          </button>
+          <ExportDropdown
+            onExportExcel={handleExportExcel}
+            onExportPDF={handleExportPdf}
+            onExportCSV={handleExportCsv}
+          />
 
           {canApprove && !isEmployee && (
             <button
@@ -1406,7 +1407,7 @@ export const OvertimeManagementModule: React.FC<OvertimeManagementModuleProps> =
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '6px', fontSize: '0.78rem', color: '#475569' }}>
                   <div>📅 Date: <strong>{formatDateDDMMYYYY(reviewingRequest.date)}</strong></div>
                   <div>⏰ Checkout: <strong>{reviewingRequest.actualCheckOut || '08:00 PM'}</strong></div>
-                  <div>⏳ Requested: <strong style={{ color: '#0E7490' }}>{reviewingRequest.requestedOtHours} hrs</strong></div>
+                  <div>Requested: <strong style={{ color: '#0E7490' }}>{reviewingRequest.requestedOtHours} hrs</strong></div>
                   <div>🏷️ Reason: <strong>{reviewingRequest.reason}</strong></div>
                 </div>
                 {reviewingRequest.workDescription && (

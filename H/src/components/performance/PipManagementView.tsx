@@ -5,6 +5,7 @@ import {
   PipStatus
 } from '../../types/performance';
 import { PerformanceTerminologyTooltip } from './PerformanceTerminologyTooltip';
+import { formatDateDDMMYYYY } from '../../utils/dateUtils';
 import {
   AlertTriangle,
   Clock,
@@ -345,7 +346,7 @@ export const PipManagementView: React.FC<PipManagementViewProps> = ({
 
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '11px', color: '#475569' }}>
                   <Clock size={13} color="#0E7490" />
-                  <span>{pip.durationDays} Days ({pip.startDate} to {pip.targetEndDate})</span>
+                  <span>{pip.durationDays} Days ({formatDateDDMMYYYY(pip.startDate)} to {formatDateDDMMYYYY(pip.targetEndDate)})</span>
                 </div>
 
                 {/* Progress bar */}
@@ -513,7 +514,7 @@ export const PipManagementView: React.FC<PipManagementViewProps> = ({
                   </strong>
                 </div>
                 <p style={{ margin: 0, fontSize: '13px', color: '#1E293B', lineHeight: '1.45' }}>
-                  Frequency: <strong>{selectedPip.reviewFrequency || 'Weekly'}</strong> • Assigned Reviewer: <strong>{selectedPip.assignedReviewer}</strong> • Target End Date: <strong>{selectedPip.targetEndDate}</strong>
+                  Frequency: <strong>{selectedPip.reviewFrequency || 'Weekly'}</strong> • Assigned Reviewer: <strong>{selectedPip.assignedReviewer}</strong> • Target End Date: <strong>{formatDateDDMMYYYY(selectedPip.targetEndDate)}</strong>
                 </p>
               </div>
 

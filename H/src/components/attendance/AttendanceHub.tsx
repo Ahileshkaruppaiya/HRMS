@@ -39,10 +39,11 @@ export const AttendanceHub: React.FC = () => {
     leaveRequests, 
     approveLeave, 
     rejectLeave, 
-    setActiveModule,
-    markAttendance,
-    attendanceCorrections,
-    reviewAttendanceCorrection
+    setActiveModule, 
+    markAttendance, 
+    attendanceCorrections, 
+    reviewAttendanceCorrection,
+    shifts
   } = useHRMS();
 
   // Navigation Sub-view: Defaults to Attendance Reports
@@ -56,22 +57,11 @@ export const AttendanceHub: React.FC = () => {
 
 
 
-  // Sample regularisation items
-  const [regularisations, setRegularisations] = useState([
-    { id: 'REG-101', employee: 'Ahilen S', empId: 'EMP-001', date: '2026-09-01', type: 'Missed Check-In', reason: 'Biometric device offline at Gate 2', status: 'Pending' },
-    { id: 'REG-102', employee: 'Priya Sharma', empId: 'EMP-004', date: '2026-08-31', type: 'Late Check-In Regularisation', reason: 'Client on-site morning visit', status: 'Pending' }
-  ]);
+  // Document verification items
+  const [docApprovals, setDocApprovals] = useState<{ id: string; employee: string; empId: string; docType: string; date: string; status: string }[]>([]);
 
-  // Sample document verification items
-  const [docApprovals, setDocApprovals] = useState([
-    { id: 'DOC-201', employee: 'Rahul Verma', empId: 'EMP-002', docType: 'Bank Account / Cancelled Cheque', date: '2026-09-02', status: 'Pending' },
-    { id: 'DOC-202', employee: 'Ananya Roy', empId: 'EMP-005', docType: 'Passport Photo KYC', date: '2026-09-01', status: 'Pending' }
-  ]);
-
-  // Sample helpdesk tickets
-  const [helpdeskTickets, setHelpdeskTickets] = useState([
-    { id: 'TKT-301', employee: 'Sneha Patel', subject: 'Geofence radius alert at Tech Park Branch', category: 'Attendance Device', date: '2026-09-02', status: 'Pending' }
-  ]);
+  // Helpdesk tickets
+  const [helpdeskTickets, setHelpdeskTickets] = useState<{ id: string; employee: string; subject: string; category: string; date: string; status: string }[]>([]);
 
   // Real-time hover state on chart
   const [hoveredPoint, setHoveredPoint] = useState<ActivityPoint | null>(null);
@@ -100,13 +90,7 @@ export const AttendanceHub: React.FC = () => {
     filterReports.modesOfWork.length;
 
   // Master employees list for calculating metric stats
-  const baseEmployees = employees.length > 0 ? employees : [
-    { id: '1', employeeId: 'EMP-001', firstName: 'Ahilen', lastName: 'S', department: 'Engineering', designation: 'Tech Lead', employmentType: 'Full-Time' as const },
-    { id: '2', employeeId: 'EMP-002', firstName: 'Rahul', lastName: 'Verma', department: 'Accounts', designation: 'Senior Accountant', employmentType: 'Full-Time' as const },
-    { id: '3', employeeId: 'EMP-003', firstName: 'David', lastName: 'Miller', department: 'Sales', designation: 'Account Exec', employmentType: 'Full-Time' as const },
-    { id: '4', employeeId: 'EMP-004', firstName: 'Priya', lastName: 'Sharma', department: 'Human Resources', designation: 'HR Specialist', employmentType: 'Full-Time' as const },
-    { id: '5', employeeId: 'EMP-005', firstName: 'Ananya', lastName: 'Roy', department: 'Marketing', designation: 'Brand Manager', employmentType: 'Contract' as const },
-  ];
+  const baseEmployees = employees;
 
   // Dynamically filter employees according to active filter criteria
   const activeEmployees = baseEmployees.filter(emp => {
@@ -124,6 +108,21 @@ export const AttendanceHub: React.FC = () => {
       if (emp.employmentType && !filterReports.employmentTypes.includes(emp.employmentType)) {
         return false;
       }
+    }
+
+    // 3. Shift filter based on Company Shifts
+    if (filterReports.shifts && filterReports.shifts.length > 0) {
+      const empShift = emp.workShift || 
+        shifts.find(s => s.assignments?.some(a => a.employeeId === emp.employeeId || a.employeeId === emp.id))?.shiftName || 
+        shifts[0]?.shiftName;
+      const matchesShift = filterReports.shifts.some(selectedShift => 
+        empShift && (
+          empShift === selectedShift || 
+          empShift.toLowerCase().includes(selectedShift.toLowerCase()) || 
+          selectedShift.toLowerCase().includes(empShift.toLowerCase())
+        )
+      );
+      if (!matchesShift) return false;
     }
 
     return true;
@@ -189,11 +188,6 @@ export const AttendanceHub: React.FC = () => {
 
   // Pending leaves count
   const pendingLeavesList = leaveRequests.filter(l => l.status === 'Pending');
-
-  // Handle Quick punch-in for demo
-  const handleDemoPunch = () => {
-    markAttendance(currentUser.employeeId || 'EMP-001', 'Present', 'Face Recognition');
-  };
 
 
 
@@ -572,12 +566,6 @@ export const AttendanceHub: React.FC = () => {
                   <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#22c55e', display: 'inline-block' }}></span>
                   <span>Face AI & GPS sensors sync active across 3 office gates</span>
                 </div>
-                <button 
-                  onClick={handleDemoPunch}
-                  style={{ color: '#2563eb', fontWeight: 700, fontSize: '0.75rem', background: '#eff6ff', padding: '3px 8px', borderRadius: '4px' }}
-                >
-                  + Punch Demo Check-In
-                </button>
               </div>
             </div>
           </div>
@@ -767,7 +755,7 @@ export const AttendanceHub: React.FC = () => {
                           </span>
                         </div>
                         <div style={{ fontSize: '0.78rem', color: '#0E7490', fontWeight: 600 }}>
-                          {req.missingType} on {req.date} (Req: {req.requestedCheckIn || '--:--'} - {req.requestedCheckOut || '--:--'})
+                          {req.missingType} on {formatDateDDMMYYYY(req.date)} (Req: {req.requestedCheckIn || '--:--'} - {req.requestedCheckOut || '--:--'})
                         </div>
                         <div style={{ fontSize: '0.76rem', color: '#64748B', marginTop: '2px' }}>
                           <strong>Reason:</strong> {req.reason}
@@ -814,31 +802,37 @@ export const AttendanceHub: React.FC = () => {
             </div>
             <div className="modal-body" style={{ padding: '16px' }}>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                {docApprovals.map(doc => (
-                  <div key={doc.id} style={{ background: '#f8fafc', padding: '12px 14px', borderRadius: '10px', border: '1px solid #e2e8f0', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <div>
-                      <div style={{ fontWeight: 700, fontSize: '0.9rem' }}>{doc.employee} ({doc.empId})</div>
-                      <div style={{ fontSize: '0.78rem', color: '#16a34a', fontWeight: 600 }}>{doc.docType}</div>
-                      <div style={{ fontSize: '0.74rem', color: '#64748b' }}>Submitted on: {doc.date}</div>
-                    </div>
-                    <div style={{ display: 'flex', gap: '6px' }}>
-                      <button 
-                        className="btn btn-primary btn-sm"
-                        style={{ padding: '4px 8px', fontSize: '0.75rem', background: '#16a34a' }}
-                        onClick={() => setDocApprovals(prev => prev.filter(d => d.id !== doc.id))}
-                      >
-                        Verify & Accept
-                      </button>
-                      <button 
-                        className="btn btn-secondary btn-sm"
-                        style={{ padding: '4px 8px', fontSize: '0.75rem', color: '#ef4444' }}
-                        onClick={() => setDocApprovals(prev => prev.filter(d => d.id !== doc.id))}
-                      >
-                        Reject
-                      </button>
-                    </div>
+                {docApprovals.length === 0 ? (
+                  <div style={{ padding: '28px', textAlign: 'center', color: '#64748B', fontSize: '0.85rem' }}>
+                    No employee KYC documents or bank proofs pending verification.
                   </div>
-                ))}
+                ) : (
+                  docApprovals.map(doc => (
+                    <div key={doc.id} style={{ background: '#f8fafc', padding: '12px 14px', borderRadius: '10px', border: '1px solid #e2e8f0', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <div>
+                        <div style={{ fontWeight: 700, fontSize: '0.9rem' }}>{doc.employee} ({doc.empId})</div>
+                        <div style={{ fontSize: '0.78rem', color: '#16a34a', fontWeight: 600 }}>{doc.docType}</div>
+                        <div style={{ fontSize: '0.74rem', color: '#64748b' }}>Submitted on: {formatDateDDMMYYYY(doc.date)}</div>
+                      </div>
+                      <div style={{ display: 'flex', gap: '6px' }}>
+                        <button 
+                          className="btn btn-primary btn-sm"
+                          style={{ padding: '4px 8px', fontSize: '0.75rem', background: '#16a34a' }}
+                          onClick={() => setDocApprovals(prev => prev.filter(d => d.id !== doc.id))}
+                        >
+                          Verify & Accept
+                        </button>
+                        <button 
+                          className="btn btn-secondary btn-sm"
+                          style={{ padding: '4px 8px', fontSize: '0.75rem', color: '#ef4444' }}
+                          onClick={() => setDocApprovals(prev => prev.filter(d => d.id !== doc.id))}
+                        >
+                          Reject
+                        </button>
+                      </div>
+                    </div>
+                  ))
+                )}
               </div>
             </div>
           </div>
@@ -855,24 +849,30 @@ export const AttendanceHub: React.FC = () => {
             </div>
             <div className="modal-body" style={{ padding: '16px' }}>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                {helpdeskTickets.map(tkt => (
-                  <div key={tkt.id} style={{ background: '#f8fafc', padding: '12px 14px', borderRadius: '10px', border: '1px solid #e2e8f0', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <div>
-                      <div style={{ fontWeight: 700, fontSize: '0.9rem' }}>{tkt.subject}</div>
-                      <div style={{ fontSize: '0.78rem', color: '#0284c7' }}>Category: {tkt.category} • Raised by: {tkt.employee}</div>
-                      <div style={{ fontSize: '0.74rem', color: '#64748b' }}>Date: {tkt.date}</div>
-                    </div>
-                    <div style={{ display: 'flex', gap: '6px' }}>
-                      <button 
-                        className="btn btn-primary btn-sm"
-                        style={{ padding: '4px 8px', fontSize: '0.75rem' }}
-                        onClick={() => setHelpdeskTickets(prev => prev.filter(t => t.id !== tkt.id))}
-                      >
-                        Resolve Ticket
-                      </button>
-                    </div>
+                {helpdeskTickets.length === 0 ? (
+                  <div style={{ padding: '28px', textAlign: 'center', color: '#64748B', fontSize: '0.85rem' }}>
+                    No pending attendance or device helpdesk tickets.
                   </div>
-                ))}
+                ) : (
+                  helpdeskTickets.map(tkt => (
+                    <div key={tkt.id} style={{ background: '#f8fafc', padding: '12px 14px', borderRadius: '10px', border: '1px solid #e2e8f0', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <div>
+                        <div style={{ fontWeight: 700, fontSize: '0.9rem' }}>{tkt.subject}</div>
+                        <div style={{ fontSize: '0.78rem', color: '#0284c7' }}>Category: {tkt.category} • Raised by: {tkt.employee}</div>
+                        <div style={{ fontSize: '0.74rem', color: '#64748b' }}>Date: {formatDateDDMMYYYY(tkt.date)}</div>
+                      </div>
+                      <div style={{ display: 'flex', gap: '6px' }}>
+                        <button 
+                          className="btn btn-primary btn-sm"
+                          style={{ padding: '4px 8px', fontSize: '0.75rem' }}
+                          onClick={() => setHelpdeskTickets(prev => prev.filter(t => t.id !== tkt.id))}
+                        >
+                          Resolve Ticket
+                        </button>
+                      </div>
+                    </div>
+                  ))
+                )}
               </div>
             </div>
           </div>

@@ -5,6 +5,8 @@ import {
   CompanyDepartment
 } from '../../types/performance';
 import { DEPARTMENT_TEMPLATES } from '../../data/performanceInitialData';
+import { useHRMS } from '../../context/HRMSContext';
+import { formatDateDDMMYYYY } from '../../utils/dateUtils';
 import {
   User,
   Award,
@@ -137,67 +139,46 @@ export const SinglePersonPerformanceView: React.FC<SinglePersonPerformanceViewPr
         };
       });
 
-  // Resolve Tasks for the current employee
+  const { tasks = [], enhancedTasks = [] } = useHRMS();
+
+  // Resolve Tasks for the current employee from real tasks in context
   const getTasksForEmployee = () => {
     if (!currentEmp) return [];
-    const dept = currentEmp.department;
-    if (dept === 'Sales') {
-      return [
-        { id: 't-1', title: 'Close Q3 Utility Solar Tender with Enercon EPC', dueDate: 'Sep 15, 2026', priority: 'High', status: 'Completed', progress: 100 },
-        { id: 't-2', title: 'Submit BOS Package Quotations for 3MW Rooftop Sites', dueDate: 'Sep 22, 2026', priority: 'High', status: 'In Progress', progress: 75 },
-        { id: 't-3', title: 'Onboard 3 New Solar EPC Channel Partners in South Zone', dueDate: 'Sep 28, 2026', priority: 'Medium', status: 'In Progress', progress: 60 },
-        { id: 't-4', title: 'Log CRM Client Activity & Payment Recovery Pipeline', dueDate: 'Sep 30, 2026', priority: 'Normal', status: 'Pending', progress: 25 }
-      ];
-    } else if (dept === 'HR') {
-      return [
-        { id: 't-1', title: 'Complete September Biometric Attendance Reconciliation', dueDate: 'Sep 10, 2026', priority: 'High', status: 'Completed', progress: 100 },
-        { id: 't-2', title: 'Offer Rollout for Senior Solar Structural Engineer', dueDate: 'Sep 18, 2026', priority: 'High', status: 'In Progress', progress: 80 },
-        { id: 't-3', title: 'Organize Quarterly All-Hands and Employee Recognition Awards', dueDate: 'Sep 25, 2026', priority: 'Medium', status: 'In Progress', progress: 50 },
-        { id: 't-4', title: 'Statutory PF/ESI Compliance Documentation Filing', dueDate: 'Sep 30, 2026', priority: 'High', status: 'Pending', progress: 20 }
-      ];
-    } else if (dept === 'Accounts') {
-      return [
-        { id: 't-1', title: 'Reconcile Module Mounting Structure Client Invoices', dueDate: 'Sep 12, 2026', priority: 'High', status: 'Completed', progress: 100 },
-        { id: 't-2', title: 'Process Vendor Payment Vouchers for Raw Coil Suppliers', dueDate: 'Sep 20, 2026', priority: 'High', status: 'In Progress', progress: 70 },
-        { id: 't-3', title: 'Overdue Outstanding Collection Follow-up with EPCs', dueDate: 'Sep 26, 2026', priority: 'Medium', status: 'In Progress', progress: 65 },
-        { id: 't-4', title: 'Monthly GST Input Tax Credit (ITC) Matching', dueDate: 'Sep 30, 2026', priority: 'Normal', status: 'Pending', progress: 15 }
-      ];
-    } else if (dept === 'Procurement') {
-      return [
-        { id: 't-1', title: 'Price Lock Agreement for 120 Tons Galvalume Coils', dueDate: 'Sep 14, 2026', priority: 'High', status: 'Completed', progress: 100 },
-        { id: 't-2', title: 'Release Purchase Orders for High-Tensile BOS Fasteners', dueDate: 'Sep 21, 2026', priority: 'High', status: 'In Progress', progress: 85 },
-        { id: 't-3', title: 'Vendor Quality Audit for Zinc-Aluminium Flange Suppliers', dueDate: 'Sep 27, 2026', priority: 'Medium', status: 'In Progress', progress: 40 },
-        { id: 't-4', title: 'Quarterly Supplier Scorecard & SLA Review', dueDate: 'Sep 30, 2026', priority: 'Normal', status: 'Pending', progress: 10 }
-      ];
-    } else if (dept === 'Dispatch') {
-      return [
-        { id: 't-1', title: 'Dispatch 4 Truckloads to Solar Project Site', dueDate: 'Sep 12, 2026', priority: 'High', status: 'Completed', progress: 100 },
-        { id: 't-2', title: 'Transit Insurance and E-Way Bill Verification for BOS Kits', dueDate: 'Sep 19, 2026', priority: 'High', status: 'In Progress', progress: 90 },
-        { id: 't-3', title: 'Optimize Pallet Packing Density to Reduce Freight Cost', dueDate: 'Sep 25, 2026', priority: 'Medium', status: 'In Progress', progress: 50 },
-        { id: 't-4', title: 'Warehouse Logistics Safety and Turnaround Time Audit', dueDate: 'Sep 30, 2026', priority: 'Normal', status: 'Pending', progress: 30 }
-      ];
-    } else if (dept === 'Design') {
-      return [
-        { id: 't-1', title: 'Finalize 5MW Ground-Mount Purlin Structural CAD Drawings', dueDate: 'Sep 11, 2026', priority: 'High', status: 'Completed', progress: 100 },
-        { id: 't-2', title: 'Execute STAAD.Pro Wind Load Analysis (180 km/h cyclone zone)', dueDate: 'Sep 18, 2026', priority: 'High', status: 'In Progress', progress: 80 },
-        { id: 't-3', title: 'Revise Elevated Solar Shed Framing for Client Approval', dueDate: 'Sep 26, 2026', priority: 'Medium', status: 'In Progress', progress: 60 },
-        { id: 't-4', title: 'Standardize BOS Cable Tray Design Component Library', dueDate: 'Sep 30, 2026', priority: 'Normal', status: 'Pending', progress: 20 }
-      ];
-    } else if (dept === 'Finance') {
-      return [
-        { id: 't-1', title: 'Prepare Q3 Cash Flow Forecast & Working Capital Plan', dueDate: 'Sep 15, 2026', priority: 'High', status: 'Completed', progress: 100 },
-        { id: 't-2', title: 'Review Bank Working Capital & Letter of Credit Limits', dueDate: 'Sep 22, 2026', priority: 'High', status: 'In Progress', progress: 75 },
-        { id: 't-3', title: 'Audit Capex Variance for CNC Roll-Forming Line Upgrade', dueDate: 'Sep 28, 2026', priority: 'Medium', status: 'In Progress', progress: 50 },
-        { id: 't-4', title: 'Submit Monthly Financial Statements to Board of Directors', dueDate: 'Sep 30, 2026', priority: 'High', status: 'Pending', progress: 30 }
-      ];
-    } else {
-      return [
-        { id: 't-1', title: 'Resolve Critical SLA Inverter Communication Ticket #1042', dueDate: 'Sep 14, 2026', priority: 'High', status: 'Completed', progress: 100 },
-        { id: 't-2', title: 'Conduct Solar Plant Telemetry Remote Diagnostics', dueDate: 'Sep 21, 2026', priority: 'High', status: 'In Progress', progress: 85 },
-        { id: 't-3', title: 'Update Field Troubleshooting SOP for BOS Combiner Boxes', dueDate: 'Sep 27, 2026', priority: 'Medium', status: 'In Progress', progress: 45 },
-        { id: 't-4', title: 'Customer Technical Support Webinar on Lightning Protection', dueDate: 'Sep 30, 2026', priority: 'Normal', status: 'Pending', progress: 20 }
-      ];
+
+    // Check enhancedTasks first
+    const assignedEnhanced = enhancedTasks.filter(t => 
+      t.assignees?.some(a => a.employeeId === currentEmp.employeeId || a.employeeName?.toLowerCase().includes(currentEmp.employeeName.toLowerCase()))
+    );
+
+    if (assignedEnhanced.length > 0) {
+      return assignedEnhanced.map(t => ({
+        id: t.id,
+        title: t.title,
+        dueDate: t.dueDate,
+        priority: t.priority,
+        status: t.overallStatus === 'COMPLETED' ? 'Completed' : t.overallStatus === 'IN PROGRESS' ? 'In Progress' : 'Pending',
+        progress: t.overallProgress || 0
+      }));
     }
+
+    // Fallback to legacy tasks
+    const assignedLegacy = tasks.filter(t => 
+      t.assignedEmployeeId === currentEmp.employeeId || 
+      t.assignedEmployeeName?.toLowerCase().includes(currentEmp.employeeName.toLowerCase())
+    );
+
+    if (assignedLegacy.length > 0) {
+      return assignedLegacy.map(t => ({
+        id: t.id,
+        title: t.title,
+        dueDate: t.dueDate,
+        priority: t.priority,
+        status: t.status,
+        progress: t.status === 'Completed' ? 100 : t.status === 'In Progress' ? 50 : 0
+      }));
+    }
+
+    return [];
   };
 
   // Generate 30-Day Attendance Grid for September 2026
@@ -1236,8 +1217,13 @@ export const SinglePersonPerformanceView: React.FC<SinglePersonPerformanceViewPr
             </div>
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-              {taskList.map((task) => {
-                const isCompleted = task.status === 'Completed';
+              {taskList.length === 0 ? (
+                <div style={{ padding: '32px 16px', textAlign: 'center', color: '#64748B', background: '#F8FAFC', borderRadius: '12px', border: '1px dashed #CBD5E1' }}>
+                  <p style={{ margin: 0, fontWeight: 500, fontSize: '13px' }}>No active tasks assigned to this employee.</p>
+                </div>
+              ) : (
+                taskList.map((task) => {
+                  const isCompleted = task.status === 'Completed';
                 const isInProgress = task.status === 'In Progress';
                 const isPending = task.status === 'Pending';
 
@@ -1304,7 +1290,7 @@ export const SinglePersonPerformanceView: React.FC<SinglePersonPerformanceViewPr
                           {task.title}
                         </div>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '2px' }}>
-                          <span style={{ fontSize: '11px', color: '#64748B' }}>Due: {task.dueDate}</span>
+                          <span style={{ fontSize: '11px', color: '#64748B' }}>Due: {formatDateDDMMYYYY(task.dueDate)}</span>
                           <span style={{
                             fontSize: '10px',
                             fontWeight: 700,
@@ -1352,8 +1338,9 @@ export const SinglePersonPerformanceView: React.FC<SinglePersonPerformanceViewPr
                     </div>
                   </div>
                 );
-              })}
-            </div>
+              })
+            )}
+          </div>
           </div>
 
           {/* ── PERFORMANCE IMPROVEMENT PLAN (PIP) STATUS & TIMELINE ── */}
@@ -1460,7 +1447,7 @@ export const SinglePersonPerformanceView: React.FC<SinglePersonPerformanceViewPr
                   <div>
                     <span style={{ fontSize: '11px', fontWeight: 600, color: '#64748B' }}>Cycle Duration:</span>
                     <div style={{ fontSize: '13px', fontWeight: 700, color: '#1E293B' }}>
-                      {activePip.durationDays} Days ({activePip.startDate} to {activePip.targetEndDate})
+                      {activePip.durationDays} Days ({formatDateDDMMYYYY(activePip.startDate)} to {formatDateDDMMYYYY(activePip.targetEndDate)})
                     </div>
                   </div>
                   <div>

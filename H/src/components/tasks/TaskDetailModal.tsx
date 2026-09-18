@@ -1,29 +1,26 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { useHRMS } from '../../context/HRMSContext';
 import { 
   X, 
-  CheckSquare, 
-  Calendar, 
-  User, 
-  Building, 
-  FileText, 
-  MessageSquare, 
-  Paperclip, 
-  History, 
-  Link2, 
-  ShieldCheck, 
-  Clock, 
-  AlertTriangle, 
   CheckCircle2, 
   RotateCcw, 
-  Send, 
   Upload, 
-  FileCheck,
+  Download,
+  Plus,
+  FileText,
   Check,
-  TrendingUp,
-  Award
+  Paperclip,
+  Send,
+  Lock,
+  Calendar,
+  Link2,
+  ExternalLink,
+  Trash2
 } from 'lucide-react';
-import { TaskItemEnhanced, TaskAssigneeStatus, computeDueStatus } from '../../types/tasks';
+import { TaskItemEnhanced, TaskAssigneeStatus, TaskDailyReport, computeDueStatus } from '../../types/tasks';
+import { ExportDropdown } from '../common/ExportDropdown';
+import { downloadCSV, downloadExcel, downloadPDF } from '../../utils/exportUtils';
+import { formatDateDDMMYYYY } from '../../utils/dateUtils';
 
 interface TaskDetailModalProps {
   taskId: string;
@@ -36,68 +33,302 @@ export const TaskDetailModal: React.FC<TaskDetailModalProps> = ({ taskId, onClos
     currentUser, 
     closeTask, 
     reopenTask, 
-    addTaskComment, 
     addTaskAttachment,
-    updateAssigneeProgress 
+    addTaskDailyReport,
+    updateTaskProcessStatus,
+    addTaskLink,
+    deleteTaskLink
   } = useHRMS();
 
-  const [activeTab, setActiveTab] = useState<
-    'overview' | 'assignees' | 'updates' | 'comments' | 'attachments' | 'timeline' | 'linked' | 'audit'
-  >('overview');
+  // Daily report inputs
+  const [dailyDate, setDailyDate] = useState<string>(new Date().toISOString().split('T')[0]);
+  const [dailyWorkDone, setDailyWorkDone] = useState<string>('');
+  const dailyTextareaRef = useRef<HTMLTextAreaElement>(null);
 
-  // Comment input
-  const [commentText, setCommentText] = useState<string>('');
+  // Link inputs & state
+  const [isAddingLink, setIsAddingLink] = useState<boolean>(false);
+  const [linkTitle, setLinkTitle] = useState<string>('');
+  const [linkUrl, setLinkUrl] = useState<string>('');
+  const [linkError, setLinkError] = useState<string>('');
 
-  // Attachment input
-  const [newFileName, setNewFileName] = useState<string>('');
+  const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
+  const [submitSuccessMsg, setSubmitSuccessMsg] = useState<string | null>(null);
 
-  // Reopen reason modal
-  const [showReopenPrompt, setShowReopenPrompt] = useState<boolean>(false);
-  const [reopenReason, setReopenReason] = useState<string>('');
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Close task confirmation modal
+  // Close & Reopen modals
   const [showClosePrompt, setShowClosePrompt] = useState<boolean>(false);
   const [closeRemarks, setCloseRemarks] = useState<string>('');
-
-  // Inline update my progress state
-  const [showMyUpdateForm, setShowMyUpdateForm] = useState<boolean>(false);
-  const [myProgressInput, setMyProgressInput] = useState<number>(0);
-  const [myStatusInput, setMyStatusInput] = useState<TaskAssigneeStatus>('In Progress');
-  const [myRemarkInput, setMyRemarkInput] = useState<string>('');
+  const [showReopenPrompt, setShowReopenPrompt] = useState<boolean>(false);
+  const [reopenReason, setReopenReason] = useState<string>('');
 
   const task = enhancedTasks.find(t => t.id === taskId);
   if (!task) return null;
 
-  const currentEmpId = currentUser.employeeId || 'EMP-001';
-  const myAssignee = task.assignees.find(a => a.employeeId === currentEmpId);
+  const currentEmpId = currentUser.employeeId || currentUser.id || 'EMP-001';
+  const myAssignee = task.assignees.find(a => 
+    a.employeeId === currentEmpId ||
+    a.employeeId === currentUser.id ||
+    (currentUser.name && a.employeeName?.toLowerCase().includes(currentUser.name.toLowerCase()))
+  ) || task.assignees[0];
 
-  const isResponsiblePerson = task.responsiblePersonId === currentEmpId;
-  const isSuperOrHrAdmin = currentUser.role === 'Super Admin' || currentUser.role === 'HR Admin' || currentUser.role === 'ERP Administrator';
-  const canClose = (isResponsiblePerson || isSuperOrHrAdmin) && task.overallStatus !== 'CLOSED';
-  const canReopen = (isResponsiblePerson || isSuperOrHrAdmin) && task.overallStatus === 'CLOSED';
+  // Process Stage (1 of 4: Pending, In Process, Under Review, Completed)
+  const currentStage: TaskAssigneeStatus = (myAssignee?.individualStatus) || 
+    (task.overallStatus === 'COMPLETED' || task.overallStatus === 'CLOSED' ? 'Completed' :
+     task.overallStatus === 'IN PROGRESS' ? 'In Process' : 'Pending');
+
+  const [selectedStage, setSelectedStage] = useState<TaskAssigneeStatus>(currentStage);
+
+  useEffect(() => {
+    setSelectedStage(currentStage);
+  }, [currentStage]);
 
   const dueStatus = computeDueStatus(task.dueDate, task.overallStatus);
+  const taskDailyReports: TaskDailyReport[] = task.dailyReports || [];
 
-  const handleAddComment = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!commentText.trim()) return;
-    addTaskComment(task.id, commentText.trim());
-    setCommentText('');
-  };
+  // Authority & Role checks
+  const currentEmpName = (currentUser.name || '').trim().toLowerCase();
+  const isSuperAdmin = currentUser.role === 'Super Admin' || currentUser.role === 'ERP Administrator';
+  const isCEO = isSuperAdmin || currentUser.role === 'CEO' || (currentUser as any).designation?.toLowerCase().includes('ceo') || (currentUser as any).role?.toLowerCase().includes('ceo');
+  const isHR = currentUser.role === 'HR Manager' || currentUser.role === 'HR Admin' || (currentUser as any).department?.toLowerCase().includes('hr') || (currentUser as any).role?.toLowerCase().includes('hr');
+  const isAssigner = 
+    (task.assignedBy && task.assignedBy.toLowerCase().includes(currentEmpName)) ||
+    (task.createdBy && task.createdBy.toLowerCase().includes(currentEmpName)) ||
+    task.responsiblePersonId === currentEmpId ||
+    task.responsiblePersonId === currentUser.id;
+  const isResponsiblePerson = task.responsiblePersonId === currentEmpId || 
+    task.responsiblePersonId === currentUser.id ||
+    Boolean(currentEmpName && task.responsiblePersonName && task.responsiblePersonName.toLowerCase().includes(currentEmpName));
+  const isAssignee = task.assignees.some(a => 
+    (a.employeeId && (a.employeeId === currentEmpId || a.employeeId === currentUser.id)) || 
+    (currentEmpName && a.employeeName && a.employeeName.toLowerCase().includes(currentEmpName)) ||
+    (currentEmpName && a.employeeName && currentEmpName.includes(a.employeeName.toLowerCase()))
+  );
 
-  const handleAddAttachment = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!newFileName.trim()) return;
-    const name = newFileName.endsWith('.pdf') || newFileName.endsWith('.docx') ? newFileName : `${newFileName}.pdf`;
-    addTaskAttachment(task.id, {
-      fileName: name,
-      fileSize: '1.2 MB',
-      fileType: 'PDF Document',
-      fileUrl: '#',
-      uploadedBy: currentUser.name
+  // Process Stage status can ONLY be edited by the assigned person (or responsible person if no assignees assigned)
+  const canEditProcess = isAssignee || (task.assignees.length === 0 && isResponsiblePerson);
+
+  // Daily Reports: HR, CEO, Assigner, and Assigned Person can view AND submit daily reports
+  const canSubmitDailyReport = isCEO || isHR || isAssigner || isAssignee || isResponsiblePerson;
+  const canViewReports = isCEO || isHR || isAssigner || isAssignee || isResponsiblePerson;
+  // Report downloads: ONLY HR and CEO can download (overall and single person reports)
+  const canDownloadReport = isCEO || isHR;
+  const visibleReports = taskDailyReports;
+
+  // Task Do Person: ONLY the person doing/assigned to the task can give/add links
+  // ("TASK DO PERSON ONLY GIVE THE LINK EG:MY TASK KU NATHA LINK KUDUKANUM")
+  const isTaskDoer = isAssignee || (task.assignees.length === 0 && isResponsiblePerson);
+  const canAddLink = isTaskDoer;
+  const canDeleteLink = isTaskDoer || isSuperAdmin;
+
+  const handleAddLink = (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    if (!canAddLink) return;
+    const trimmedUrl = linkUrl.trim();
+    if (!trimmedUrl) {
+      setLinkError('Please enter a valid URL / link');
+      return;
+    }
+    addTaskLink(task.id, {
+      title: linkTitle.trim() || trimmedUrl,
+      url: trimmedUrl
     });
-    setNewFileName('');
+    setLinkTitle('');
+    setLinkUrl('');
+    setLinkError('');
+    setIsAddingLink(false);
   };
+
+  const canClose = (isResponsiblePerson || isHR || isCEO) && task.overallStatus !== 'CLOSED';
+  const canReopen = (isResponsiblePerson || isHR || isCEO) && task.overallStatus === 'CLOSED';
+
+  // Task Start Date and Timeline calculation from the day task started
+  const taskStartDateStr = task.startDate || task.taskDate || (task.createdAt ? task.createdAt.split('T')[0] : '') || new Date().toISOString().split('T')[0];
+  const todayStr = new Date().toISOString().split('T')[0];
+
+  // Daily reports timeline starting from the date the task started (Task Start Date)
+  const dailyReportTimeline = useMemo(() => {
+    const list: { dateStr: string; dayIndex: number; reports: TaskDailyReport[] }[] = [];
+    
+    // Parse start date and today
+    const [sY, sM, sD] = taskStartDateStr.split('-').map(Number);
+    const start = new Date(sY, (sM || 1) - 1, sD || 1);
+    
+    const [tY, tM, tD] = todayStr.split('-').map(Number);
+    const today = new Date(tY, (tM || 1) - 1, tD || 1);
+    
+    // End date should be at least today, or if start is in future, at least start
+    const end = today.getTime() >= start.getTime() ? today : start;
+    
+    const cur = new Date(start);
+    let day = 1;
+    while (cur.getTime() <= end.getTime()) {
+      const y = cur.getFullYear();
+      const m = String(cur.getMonth() + 1).padStart(2, '0');
+      const d = String(cur.getDate()).padStart(2, '0');
+      const dStr = `${y}-${m}-${d}`;
+      
+      const matching = taskDailyReports.filter(r => r.reportDate === dStr);
+      list.push({
+        dateStr: dStr,
+        dayIndex: day,
+        reports: matching
+      });
+      
+      cur.setDate(cur.getDate() + 1);
+      day++;
+    }
+    
+    // Also include any reports with dates outside range (e.g. future or prior)
+    taskDailyReports.forEach(r => {
+      if (!list.some(item => item.dateStr === r.reportDate)) {
+        list.push({
+          dateStr: r.reportDate,
+          dayIndex: 0,
+          reports: [r]
+        });
+      }
+    });
+
+    return list;
+  }, [taskStartDateStr, todayStr, taskDailyReports]);
+
+  // Export all task daily reports (ONLY for HR and CEO)
+  const getTaskReportsExportData = () => {
+    const columns = [
+      { key: 'reportDate', label: 'Report Date' },
+      { key: 'employeeName', label: 'Employee Name' },
+      { key: 'employeeDepartment', label: 'Department' },
+      { key: 'processStatus', label: 'Workflow Stage' },
+      { key: 'workDoneToday', label: 'Work Completed Today' },
+      { key: 'planForTomorrow', label: 'Plan For Tomorrow' },
+      { key: 'blockersOrIssues', label: 'Blockers / Issues' }
+    ];
+
+    const data = taskDailyReports.map(r => ({
+      reportDate: r.reportDate,
+      employeeName: r.employeeName,
+      employeeDepartment: r.employeeDepartment || task.department,
+      processStatus: r.processStatus,
+      workDoneToday: r.workDoneToday,
+      planForTomorrow: r.planForTomorrow || 'N/A',
+      blockersOrIssues: r.blockersOrIssues || 'None'
+    }));
+
+    const filename = `Task_${task.taskNumber}_Daily_Reports_${new Date().toISOString().split('T')[0]}`;
+    const title = `${task.taskNumber} - Daily Execution Reports`;
+
+    return { columns, data, filename, title };
+  };
+
+  const handleExportTaskDailyPDF = () => {
+    if (!canDownloadReport) return;
+    const { columns, data, filename, title } = getTaskReportsExportData();
+    downloadPDF(data, title, filename, columns, 'VRM Enterprise HRM');
+  };
+
+  const handleExportTaskDailyExcel = () => {
+    if (!canDownloadReport) return;
+    const { columns, data, filename } = getTaskReportsExportData();
+    downloadExcel(data, filename, columns);
+  };
+
+  const handleExportTaskDailyCSV = () => {
+    if (!canDownloadReport) return;
+    const { columns, data, filename } = getTaskReportsExportData();
+    downloadCSV(data, filename, columns);
+  };
+
+  // Final Submit Handler for Submit Button (Updates status and submits daily report)
+  const handleFinalSubmit = () => {
+    setIsSubmitting(true);
+
+    // 1. Submit daily report if entered
+    if (dailyWorkDone.trim()) {
+      const reportStatus = canEditProcess ? selectedStage : (task.overallStatus === 'COMPLETED' ? 'Completed' : 'In Process');
+      addTaskDailyReport(task.id, {
+        reportDate: dailyDate,
+        workDoneToday: dailyWorkDone.trim(),
+        processStatus: reportStatus
+      });
+      setDailyWorkDone('');
+    }
+
+    // 2. Always synchronize/update process stage if assigned person
+    if (canEditProcess) {
+      updateTaskProcessStatus(task.id, selectedStage, dailyWorkDone.trim() || undefined);
+    }
+
+    // 3. Show feedback & close
+    setSubmitSuccessMsg(`✓ Daily updates submitted! Visible to CEO, HR, and Assigned Person.`);
+    setTimeout(() => {
+      setIsSubmitting(false);
+      onClose();
+    }, 1000);
+  };
+
+  const handleSubmitDailyReport = (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    if (!dailyWorkDone.trim()) return;
+
+    const reportStatus = canEditProcess ? selectedStage : (task.overallStatus === 'COMPLETED' ? 'Completed' : 'In Process');
+
+    addTaskDailyReport(task.id, {
+      reportDate: dailyDate,
+      workDoneToday: dailyWorkDone.trim(),
+      processStatus: reportStatus
+    });
+
+    // Synchronize process status if authorized
+    if (canEditProcess) {
+      updateTaskProcessStatus(task.id, selectedStage, dailyWorkDone.trim());
+    }
+
+    setDailyWorkDone('');
+    setSubmitSuccessMsg(`✓ Daily report for ${dailyDate} submitted! Visible to CEO, HR, and Assigned Person.`);
+    setTimeout(() => setSubmitSuccessMsg(null), 3500);
+  };
+
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+
+    Array.from(files).forEach(file => {
+      const sizeStr = file.size < 1024 * 1024 
+        ? `${(file.size / 1024).toFixed(1)} KB` 
+        : `${(file.size / (1024 * 1024)).toFixed(1)} MB`;
+
+      let initialUrl = '#';
+      try {
+        initialUrl = URL.createObjectURL(file);
+      } catch (err) {
+        console.warn('Could not create ObjectURL', err);
+      }
+
+      addTaskAttachment(task.id, {
+        fileName: file.name,
+        fileSize: sizeStr,
+        fileType: file.type || 'Document',
+        fileUrl: initialUrl,
+        uploadedBy: `${currentUser.name} (${currentUser.role})`
+      });
+
+      if (file.size < 400 * 1024) {
+        const reader = new FileReader();
+        reader.onload = (event) => {
+          const base64Url = (event.target?.result as string) || '#';
+          if (base64Url && base64Url !== '#') {
+            // Updated in background if needed
+          }
+        };
+        reader.readAsDataURL(file);
+      }
+    });
+
+    e.target.value = '';
+  };
+
+
 
   const handleExecuteClose = (e: React.FormEvent) => {
     e.preventDefault();
@@ -112,696 +343,1011 @@ export const TaskDetailModal: React.FC<TaskDetailModalProps> = ({ taskId, onClos
     setShowReopenPrompt(false);
   };
 
-  const handleSaveMyProgress = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!myAssignee) return;
-    updateAssigneeProgress(
-      task.id,
-      myAssignee.id,
-      myProgressInput,
-      myStatusInput,
-      myRemarkInput.trim() || undefined,
-      myAssignee.completionEvidence
-    );
-    setShowMyUpdateForm(false);
-  };
-
   return (
-    <div className="modal-overlay">
-      <div className="modal-content" style={{ maxWidth: '900px', height: '90vh', display: 'flex', flexDirection: 'column' }}>
-        {/* Header Summary Banner */}
-        <div className="modal-header" style={{ background: 'linear-gradient(135deg, #0f172a, #1e293b)', color: '#fff', padding: '18px 24px' }}>
-          <div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px' }}>
-              <span style={{ fontFamily: 'monospace', fontWeight: 700, fontSize: '0.85rem', color: '#60a5fa' }}>
+    <div className="modal-overlay" style={{ zIndex: 60, backdropFilter: 'blur(4px)', backgroundColor: 'rgba(15, 23, 42, 0.6)' }}>
+      <div className="modal-content" style={{ maxWidth: '860px', maxHeight: '92vh', display: 'flex', flexDirection: 'column', borderRadius: '16px', overflow: 'hidden', boxShadow: '0 20px 45px rgba(14, 116, 144, 0.15)', border: '1px solid #E7ECF3' }}>
+        
+        {/* ======================================================== */}
+        {/* HEADER: Software Theme Color (#0E7490 Deep Teal)         */}
+        {/* ======================================================== */}
+        <div style={{ background: '#0E7490', color: '#FFFFFF', padding: '16px 22px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div style={{ flex: 1, marginRight: '16px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
+              <span style={{ fontFamily: 'monospace', fontWeight: 700, fontSize: '0.78rem', color: '#FFFFFF', background: 'rgba(255, 255, 255, 0.2)', padding: '2px 8px', borderRadius: '6px' }}>
                 {task.taskNumber}
               </span>
-              <span className={`status-pill ${
-                task.overallStatus === 'COMPLETED' ? 'present' :
-                task.overallStatus === 'CLOSED' ? 'present' :
-                task.overallStatus === 'OVERDUE' ? 'rejected' :
-                task.overallStatus === 'IN PROGRESS' ? 'late' : 'half-day'
-              }`} style={{ fontSize: '0.72rem', padding: '2px 8px' }}>
-                {task.overallStatus}
-              </span>
-              <span className={`priority-pill ${task.priority.toLowerCase()}`} style={{ fontSize: '0.72rem' }}>
+              <span style={{ fontSize: '0.68rem', fontWeight: 700, padding: '2px 8px', borderRadius: '999px', background: '#FEF3C7', color: '#92400E' }}>
                 {task.priority}
               </span>
-              {task.sourceType === 'MOM' && (
-                <span style={{ background: 'rgba(139, 92, 246, 0.3)', color: '#c4b5fd', fontSize: '0.7rem', padding: '2px 8px', borderRadius: '4px', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                  <Link2 size={11} /> {task.momId}
-                </span>
-              )}
+              <span style={{ fontSize: '0.68rem', fontWeight: 700, padding: '2px 8px', borderRadius: '999px', background: '#ECFEFF', color: '#0E7490' }}>
+                ● {currentStage}
+              </span>
             </div>
-            <h2 style={{ fontSize: '1.2rem', fontWeight: 700, color: '#fff', margin: 0 }}>
+            <h2 style={{ fontSize: '1.18rem', fontWeight: 700, margin: 0, color: '#FFFFFF', lineHeight: 1.3 }}>
               {task.title}
             </h2>
           </div>
 
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-            {canClose && (
-              <button 
-                className="btn btn-sm"
-                onClick={() => setShowClosePrompt(true)}
-                style={{ background: '#10b981', color: '#fff', fontSize: '0.75rem', display: 'flex', alignItems: 'center', gap: '4px' }}
-              >
-                <CheckCircle2 size={14} /> Verify & Close
-              </button>
-            )}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
             {canReopen && (
               <button 
+                type="button"
                 className="btn btn-sm"
                 onClick={() => setShowReopenPrompt(true)}
-                style={{ background: '#f59e0b', color: '#fff', fontSize: '0.75rem', display: 'flex', alignItems: 'center', gap: '4px' }}
+                style={{ background: '#F59E0B', color: '#fff', fontSize: '0.75rem', borderRadius: '8px', padding: '6px 12px', border: 'none', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '4px' }}
               >
-                <RotateCcw size={14} /> Reopen Task
+                <RotateCcw size={14} /> Reopen
               </button>
             )}
-            <button onClick={onClose} style={{ color: '#fff' }}><X size={22} /></button>
+            <button 
+              type="button"
+              onClick={onClose}
+              style={{ color: '#FFFFFF', background: 'rgba(255,255,255,0.15)', border: 'none', width: '32px', height: '32px', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}
+            >
+              <X size={18} />
+            </button>
           </div>
         </div>
 
-        {/* 8 Tabs Navigation Bar */}
-        <div className="tab-container" style={{ padding: '0 24px', background: '#f8fafc', margin: 0, borderBottom: '1px solid var(--border-light)' }}>
-          {[
-            { id: 'overview', label: 'Overview', icon: FileText },
-            { id: 'assignees', label: `Assignees (${task.assignees.length})`, icon: User },
-            { id: 'updates', label: `Updates (${task.updates.length})`, icon: TrendingUp },
-            { id: 'comments', label: `Comments (${task.comments.length})`, icon: MessageSquare },
-            { id: 'attachments', label: `Attachments (${task.attachments.length})`, icon: Paperclip },
-            { id: 'timeline', label: 'Timeline', icon: Clock },
-            { id: 'linked', label: 'Linked Records', icon: Link2 },
-            { id: 'audit', label: `Audit Trail (${task.auditLogs.length})`, icon: ShieldCheck }
-          ].map(t => {
-            const Icon = t.icon;
-            return (
-              <button
-                key={t.id}
-                className={`tab-btn ${activeTab === t.id ? 'active' : ''}`}
-                onClick={() => setActiveTab(t.id as any)}
-                style={{ fontSize: '0.8rem', display: 'flex', alignItems: 'center', gap: '5px', padding: '12px 14px' }}
-              >
-                <Icon size={14} /> {t.label}
-              </button>
-            );
-          })}
-        </div>
+        {/* ======================================================== */}
+        {/* UNIFIED SINGLE PAGE BODY (1, 2, 3, 4 IN SINGLE SHEET)    */}
+        {/* ======================================================== */}
+        <div style={{ overflowY: 'auto', padding: '22px', flex: 1, background: '#F7F9FC', display: 'flex', flexDirection: 'column', gap: '16px' }}>
 
-        {/* Modal Scrollable Body */}
-        <div className="modal-body" style={{ overflowY: 'auto', padding: '24px', flex: 1 }}>
-          {/* TAB 1: OVERVIEW */}
-          {activeTab === 'overview' && (
-            <div>
-              {/* Progress Summary Card */}
-              <div className="card" style={{ padding: '18px', marginBottom: '20px', background: '#f8fafc' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-                  <span style={{ fontSize: '0.82rem', fontWeight: 600, color: 'var(--text-secondary)' }}>System-Derived Overall Progress:</span>
-                  <span style={{ fontSize: '1.1rem', fontWeight: 800, color: task.overallProgress === 100 ? '#10b981' : '#2563eb' }}>
-                    {task.overallProgress}%
+          {/* Submission Success Banner */}
+          {submitSuccessMsg && (
+            <div style={{
+              background: '#DCFCE7',
+              color: '#166534',
+              border: '1px solid #86EFAC',
+              borderRadius: '10px',
+              padding: '12px 16px',
+              fontSize: '0.84rem',
+              fontWeight: 700,
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px',
+              boxShadow: '0 2px 5px rgba(22, 101, 52, 0.1)'
+            }}>
+              <CheckCircle2 size={18} color="#16A34A" /> {submitSuccessMsg}
+            </div>
+          )}
+
+          {/* ------------------------------------------------------ */}
+          {/* 1. TASK ASSIGNMENT & SCOPE (SINGLE CLEAN BOX)          */}
+          {/* ------------------------------------------------------ */}
+          <div style={{ background: '#FFFFFF', borderRadius: '14px', padding: '18px 20px', border: '1px solid #E7ECF3', boxShadow: '0 1px 3px rgba(0,0,0,0.03)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '14px', paddingBottom: '12px', borderBottom: '1px solid #F1F5F9' }}>
+              <span style={{ background: '#0E7490', color: '#FFFFFF', width: '22px', height: '22px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.74rem', fontWeight: 800 }}>1</span>
+              <h3 style={{ fontSize: '0.92rem', fontWeight: 700, color: '#1E293B', margin: 0 }}>
+                Task Assignment &amp; Scope
+              </h3>
+            </div>
+
+            {/* 4-Column Metadata Grid directly inside single box */}
+            {(() => {
+              const rawBy = (task.assignedBy || task.createdBy || '').replace(/\s*\([^)]*\)/g, '').trim().toLowerCase();
+              const isSelfAssigned = task.assignees.some(a => {
+                const aName = (a.employeeName || '').trim().toLowerCase();
+                return aName && rawBy && (aName === rawBy || rawBy.includes(aName) || aName.includes(rawBy));
+              });
+              const displayAssignedBy = isSelfAssigned ? 'Velmurugan (CEO)' : (task.assignedBy || task.createdBy || 'HR/CEO');
+
+              return (
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '14px', paddingBottom: '14px', borderBottom: '1px solid #F1F5F9' }}>
+                  <div>
+                    <span style={{ fontSize: '0.68rem', fontWeight: 700, color: '#64748B', textTransform: 'uppercase', display: 'block' }}>Assigned By</span>
+                    <div style={{ fontSize: '0.84rem', fontWeight: 700, color: '#1E293B', marginTop: '2px' }}>{displayAssignedBy}</div>
+                  </div>
+
+                  <div>
+                    <span style={{ fontSize: '0.68rem', fontWeight: 700, color: '#64748B', textTransform: 'uppercase', display: 'block' }}>Assigned To</span>
+                    <div style={{ fontSize: '0.84rem', fontWeight: 700, color: '#1E293B', marginTop: '2px' }}>
+                      {task.assignees.map(a => a.employeeName).join(', ') || 'Assigned Person'}
+                    </div>
+                    <span style={{ fontSize: '0.68rem', color: '#16A34A', fontWeight: 600 }}>{task.department} Dept</span>
+                  </div>
+
+                  <div>
+                    <span style={{ fontSize: '0.68rem', fontWeight: 700, color: '#64748B', textTransform: 'uppercase', display: 'block' }}>Due Date</span>
+                    <div style={{ fontSize: '0.84rem', fontWeight: 700, color: dueStatus === 'Overdue' ? '#DC2626' : '#1E293B', marginTop: '2px' }}>{formatDateDDMMYYYY(task.dueDate)}</div>
+                    <span style={{ fontSize: '0.68rem', color: '#64748B' }}>Status: {dueStatus}</span>
+                  </div>
+
+                  <div>
+                    <span style={{ fontSize: '0.68rem', fontWeight: 700, color: '#64748B', textTransform: 'uppercase', display: 'block' }}>Task Category</span>
+                    <div style={{ fontSize: '0.84rem', fontWeight: 700, color: '#1E293B', marginTop: '2px' }}>{task.taskCategory}</div>
+                    <span style={{ fontSize: '0.68rem', color: '#64748B' }}>Start: {formatDateDDMMYYYY(task.startDate || task.taskDate)}</span>
+                  </div>
+                </div>
+              );
+            })()}
+
+            {/* Description directly inside single box */}
+            <div style={{ paddingTop: '12px' }}>
+              <span style={{ fontSize: '0.7rem', fontWeight: 700, color: '#475569', textTransform: 'uppercase' }}>Description:</span>
+              <p style={{ margin: '4px 0 0', fontSize: '0.84rem', color: '#334155', lineHeight: 1.5 }}>
+                {task.description || 'No description provided.'}
+              </p>
+            </div>
+
+            {/* Reference attachments directly inside single box */}
+            {task.attachments && task.attachments.length > 0 && (
+              <div style={{ marginTop: '14px', paddingTop: '12px', borderTop: '1px solid #F1F5F9' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '8px' }}>
+                  <Paperclip size={14} color="#0E7490" />
+                  <span style={{ fontSize: '0.72rem', fontWeight: 700, color: '#0E7490', textTransform: 'uppercase' }}>
+                    Task Reference Attachments ({task.attachments.length})
                   </span>
                 </div>
-                <div style={{ height: '10px', background: '#e2e8f0', borderRadius: '99px', overflow: 'hidden' }}>
-                  <div 
-                    style={{ 
-                      width: `${task.overallProgress}%`, 
-                      height: '100%', 
-                      background: task.overallProgress === 100 ? '#10b981' : '#3b82f6',
-                      transition: 'width 0.4s ease'
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+                  {task.attachments.map(att => (
+                    <a
+                      key={att.id}
+                      href={att.fileUrl}
+                      download={att.fileName}
+                      style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '8px',
+                        padding: '6px 12px',
+                        background: '#F8FAFC',
+                        border: '1px solid #E2E8F0',
+                        borderRadius: '6px',
+                        textDecoration: 'none',
+                        color: '#1E293B',
+                        fontSize: '0.82rem',
+                        fontWeight: 600,
+                        transition: 'all 0.15s ease'
+                      }}
+                      title={`Download ${att.fileName}`}
+                    >
+                      <FileText size={15} color="#0E7490" />
+                      <span>{att.fileName}</span>
+                      <Download size={14} color="#0E7490" />
+                    </a>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* ------------------------------------------------------ */}
+          {/* 2. PROCESS STAGE (DROPDOWN FORMAT IN SOFTWARE THEME)   */}
+          {/* ------------------------------------------------------ */}
+          <div style={{ background: '#FFFFFF', borderRadius: '14px', padding: '16px 20px', border: '1px solid #E7ECF3', boxShadow: '0 1px 3px rgba(0,0,0,0.03)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '12px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <span style={{ background: '#0E7490', color: '#FFFFFF', width: '22px', height: '22px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.74rem', fontWeight: 800 }}>2</span>
+                <div>
+                  <h3 style={{ fontSize: '0.92rem', fontWeight: 700, color: '#1E293B', margin: 0 }}>
+                    Process Stage
+                  </h3>
+                  <div style={{ fontSize: '0.72rem', color: '#64748B', marginTop: '2px' }}>
+                    Current workflow status: <strong style={{ color: selectedStage === 'Completed' ? '#16A34A' : '#0E7490' }}>{selectedStage}</strong>
+                  </div>
+                </div>
+              </div>
+
+              {canEditProcess ? (
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                  <label style={{ fontSize: '0.78rem', fontWeight: 700, color: '#475569' }}>
+                    Change Status:
+                  </label>
+                  <select
+                    value={selectedStage}
+                    onChange={(e) => setSelectedStage(e.target.value as TaskAssigneeStatus)}
+                    style={{
+                      padding: '6px 14px',
+                      borderRadius: '8px',
+                      border: '1.5px solid #0E7490',
+                      background: '#ECFEFF',
+                      color: '#0E7490',
+                      fontWeight: 700,
+                      fontSize: '0.82rem',
+                      cursor: 'pointer',
+                      outline: 'none'
+                    }}
+                  >
+                    <option value="Pending">Pending</option>
+                    <option value="In Process">In Process</option>
+                    <option value="Under Review">Under Review</option>
+                    <option value="Completed">Completed</option>
+                  </select>
+                </div>
+              ) : (
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                  <span
+                    style={{
+                      padding: '6px 18px',
+                      borderRadius: '8px',
+                      border: '1.5px solid #0E7490',
+                      background: '#ECFEFF',
+                      color: '#0E7490',
+                      fontWeight: 700,
+                      fontSize: '0.82rem',
+                      display: 'inline-block'
+                    }}
+                  >
+                    {selectedStage}
+                  </span>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* ------------------------------------------------------ */}
+          {/* 3. DAILY REPORTS (SINGLE NEAT & CLEAN BOX)             */}
+          {/* ------------------------------------------------------ */}
+          <div style={{ background: '#FFFFFF', borderRadius: '14px', padding: '18px 20px', border: '1px solid #E7ECF3', boxShadow: '0 1px 3px rgba(0,0,0,0.03)' }}>
+            {/* Header */}
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '8px', marginBottom: '16px', paddingBottom: '14px', borderBottom: '1px solid #E2E8F0' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <span style={{ background: '#0E7490', color: '#FFFFFF', width: '22px', height: '22px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.74rem', fontWeight: 800 }}>3</span>
+                <div>
+                  <h3 style={{ fontSize: '0.92rem', fontWeight: 700, color: '#1E293B', margin: 0 }}>
+                    Daily Reports ({taskDailyReports.length})
+                  </h3>
+                  <div style={{ fontSize: '0.72rem', color: '#64748B', marginTop: '2px' }}>
+                    Tracked from task start date: <strong style={{ color: '#0E7490' }}>{taskStartDateStr}</strong>
+                  </div>
+                </div>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                <span style={{ fontSize: '0.72rem', background: '#ECFEFF', color: '#0E7490', border: '1px solid #CFFAFE', padding: '3px 10px', borderRadius: '9999px', fontWeight: 700 }}>
+                  {dailyReportTimeline.length} Days Tracked
+                </span>
+                {canDownloadReport && taskDailyReports.length > 0 && (
+                  <ExportDropdown 
+                    onExportPDF={handleExportTaskDailyPDF}
+                    onExportExcel={handleExportTaskDailyExcel}
+                    onExportCSV={handleExportTaskDailyCSV}
+                    label="Download"
+                    size="sm"
+                  />
+                )}
+              </div>
+            </div>
+
+            {/* Direct Input Form inside the single box (No inner gray container) */}
+            {canSubmitDailyReport && (
+              <div style={{ marginBottom: '18px', paddingBottom: '16px', borderBottom: '1px solid #E2E8F0' }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '8px', marginBottom: '10px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                    <label style={{ fontSize: '0.74rem', fontWeight: 700, color: '#475569' }}>
+                      Report Date:
+                    </label>
+                    <input 
+                      type="date" 
+                      value={dailyDate} 
+                      min={taskStartDateStr}
+                      onChange={e => setDailyDate(e.target.value)} 
+                      style={{
+                        fontSize: '0.8rem',
+                        height: '34px',
+                        width: '160px',
+                        padding: '4px 10px',
+                        borderRadius: '8px',
+                        border: '1px solid #CBD5E1',
+                        background: '#FFFFFF',
+                        color: '#1E293B',
+                        fontWeight: 600,
+                        outline: 'none'
+                      }} 
+                    />
+                  </div>
+                  <span style={{ fontSize: '0.72rem', color: '#64748B' }}>
+                    Reporting as: <strong style={{ color: '#0E7490' }}>{currentUser.name}</strong> ({currentUser.role})
+                  </span>
+                </div>
+
+                <div>
+                  <textarea 
+                    ref={dailyTextareaRef}
+                    rows={2} 
+                    placeholder={`Explain specific work completed on ${dailyDate}...`} 
+                    value={dailyWorkDone} 
+                    onChange={e => setDailyWorkDone(e.target.value)} 
+                    style={{
+                      width: '100%',
+                      fontSize: '0.82rem',
+                      lineHeight: 1.45,
+                      borderRadius: '8px',
+                      border: '1px solid #CBD5E1',
+                      padding: '8px 12px',
+                      resize: 'vertical',
+                      outline: 'none',
+                      fontFamily: 'inherit'
                     }} 
                   />
                 </div>
-                <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '6px' }}>
-                  Derived from {task.assignees.length} assigned employee records.
-                </div>
-              </div>
 
-              {/* Attributes Grid */}
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '16px', marginBottom: '20px' }}>
-                <div>
-                  <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Responsible Person</span>
-                  <div style={{ fontSize: '0.85rem', fontWeight: 700, marginTop: '2px' }}>{task.responsiblePersonName}</div>
-                </div>
-                <div>
-                  <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Department</span>
-                  <div style={{ fontSize: '0.85rem', fontWeight: 700, marginTop: '2px' }}>{task.department}</div>
-                </div>
-                <div>
-                  <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Task Category</span>
-                  <div style={{ fontSize: '0.85rem', fontWeight: 700, marginTop: '2px' }}>{task.taskCategory}</div>
-                </div>
-
-                <div>
-                  <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Start Date</span>
-                  <div style={{ fontSize: '0.85rem', fontWeight: 600, marginTop: '2px' }}>{task.startDate || 'N/A'}</div>
-                </div>
-                <div>
-                  <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Due Date</span>
-                  <div style={{ fontSize: '0.85rem', fontWeight: 700, color: dueStatus === 'Overdue' ? '#dc2626' : 'inherit', marginTop: '2px' }}>
-                    {task.dueDate} ({dueStatus})
-                  </div>
-                </div>
-                <div>
-                  <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Assigned By</span>
-                  <div style={{ fontSize: '0.85rem', fontWeight: 600, marginTop: '2px' }}>{task.assignedBy}</div>
-                </div>
-              </div>
-
-              {/* Description */}
-              <div style={{ marginBottom: '20px' }}>
-                <h4 style={{ fontSize: '0.85rem', fontWeight: 700, marginBottom: '6px' }}>Task Description</h4>
-                <div style={{ background: '#f8fafc', padding: '14px', borderRadius: '8px', fontSize: '0.82rem', lineHeight: '1.6', color: '#334155' }}>
-                  {task.description}
-                </div>
-              </div>
-
-              {/* Expected Output */}
-              <div style={{ marginBottom: '20px' }}>
-                <h4 style={{ fontSize: '0.85rem', fontWeight: 700, marginBottom: '6px' }}>Expected Output / Deliverables</h4>
-                <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', padding: '12px 14px', borderRadius: '8px', fontSize: '0.82rem', color: '#166534' }}>
-                  {task.expectedOutput}
-                </div>
-              </div>
-
-              {/* Closure Remarks (if closed) */}
-              {task.closedAt && (
-                <div style={{ background: '#f0fdf4', border: '1px solid #86efac', padding: '14px', borderRadius: '8px' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: '#15803d', fontWeight: 700, fontSize: '0.85rem' }}>
-                    <CheckCircle2 size={16} /> Verified & Closed on {new Date(task.closedAt).toLocaleDateString()}
-                  </div>
-                  <div style={{ fontSize: '0.8rem', color: '#166534', marginTop: '4px' }}>
-                    Closed By: <strong>{task.closedBy}</strong>
-                  </div>
-                  <div style={{ fontSize: '0.78rem', color: '#15803d', marginTop: '2px' }}>
-                    Remarks: {task.closureRemarks}
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* TAB 2: ASSIGNEES (MULTI-EMPLOYEE PROGRESS) */}
-          {activeTab === 'assignees' && (
-            <div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-                <div>
-                  <h3 style={{ fontSize: '0.95rem', fontWeight: 700, margin: 0 }}>Assigned Employees & Independent Progress</h3>
-                  <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-                    Every assignee maintains an isolated status and deliverable evidence record.
-                  </span>
-                </div>
-
-                {myAssignee && !showMyUpdateForm && (
-                  <button 
+                <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', marginTop: '8px' }}>
+                  <button
+                    type="button"
+                    onClick={() => handleSubmitDailyReport()}
+                    disabled={!dailyWorkDone.trim()}
                     className="btn btn-primary btn-sm"
-                    onClick={() => {
-                      setShowMyUpdateForm(true);
-                      setMyProgressInput(myAssignee.progressPercentage);
-                      setMyStatusInput(myAssignee.individualStatus);
-                      setMyRemarkInput(myAssignee.latestRemark || '');
+                    style={{
+                      fontSize: '0.78rem',
+                      padding: '6px 16px',
+                      borderRadius: '8px',
+                      background: '#0E7490',
+                      borderColor: '#0E7490',
+                      fontWeight: 700,
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '6px',
+                      cursor: !dailyWorkDone.trim() ? 'not-allowed' : 'pointer',
+                      opacity: !dailyWorkDone.trim() ? 0.6 : 1,
+                      boxShadow: '0 1px 3px rgba(14, 116, 144, 0.2)'
                     }}
-                    style={{ fontSize: '0.75rem' }}
                   >
-                    Update My Status
+                    <Send size={13} /> Send
                   </button>
-                )}
-              </div>
-
-              {/* Inline Update Form for Logged In Assignee */}
-              {showMyUpdateForm && myAssignee && (
-                <form onSubmit={handleSaveMyProgress} className="card" style={{ padding: '16px', marginBottom: '20px', background: '#eff6ff', border: '1px solid #bfdbfe' }}>
-                  <h4 style={{ fontSize: '0.85rem', fontWeight: 700, color: '#1e40af', marginBottom: '10px' }}>
-                    Update My Progress ({currentUser.name})
-                  </h4>
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: '12px', marginBottom: '10px' }}>
-                    <div>
-                      <label style={{ fontSize: '0.75rem', fontWeight: 600 }}>Status</label>
-                      <select 
-                        value={myStatusInput}
-                        onChange={e => setMyStatusInput(e.target.value as any)}
-                        className="form-control"
-                        style={{ height: '34px', fontSize: '0.8rem', marginTop: '2px' }}
-                      >
-                        <option value="Pending">Pending</option>
-                        <option value="In Progress">In Progress</option>
-                        <option value="Under Review">Under Review</option>
-                        <option value="Completed">Completed (100%)</option>
-                        <option value="Blocked">Blocked</option>
-                      </select>
-                    </div>
-
-                    <div>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem', fontWeight: 600 }}>
-                        <span>Progress: {myProgressInput}%</span>
-                      </div>
-                      <input 
-                        type="range"
-                        min="0"
-                        max="100"
-                        step="5"
-                        value={myProgressInput}
-                        onChange={e => setMyProgressInput(Number(e.target.value))}
-                        style={{ width: '100%', marginTop: '6px' }}
-                      />
-                    </div>
-                  </div>
-
-                  <div style={{ marginBottom: '12px' }}>
-                    <label style={{ fontSize: '0.75rem', fontWeight: 600 }}>Remark / Notes</label>
-                    <input 
-                      type="text"
-                      placeholder="Latest update notes..."
-                      value={myRemarkInput}
-                      onChange={e => setMyRemarkInput(e.target.value)}
-                      className="form-control"
-                      style={{ fontSize: '0.8rem', height: '34px', marginTop: '2px' }}
-                    />
-                  </div>
-
-                  <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
-                    <button type="button" className="btn btn-secondary btn-sm" onClick={() => setShowMyUpdateForm(false)}>
-                      Cancel
-                    </button>
-                    <button type="submit" className="btn btn-primary btn-sm">
-                      Save & Recalculate
-                    </button>
-                  </div>
-                </form>
-              )}
-
-              {/* Assignees Cards */}
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                {task.assignees.map(asn => (
-                  <div key={asn.id} className="card" style={{ padding: '16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '14px' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                      {asn.employeeAvatar ? (
-                        <img 
-                          src={asn.employeeAvatar} 
-                          alt={asn.employeeName} 
-                          style={{ width: '44px', height: '44px', borderRadius: '99px', objectFit: 'cover' }} 
-                        />
-                      ) : (
-                        <div style={{
-                          width: '44px',
-                          height: '44px',
-                          borderRadius: '99px',
-                          backgroundColor: '#eff6ff',
-                          color: '#155DFC',
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          fontSize: '0.95rem',
-                          fontWeight: 700,
-                          border: '1px solid #dbeafe',
-                          flexShrink: 0
-                        }}>
-                          {asn.employeeName.charAt(0)}
-                        </div>
-                      )}
-                      <div>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                          <span style={{ fontWeight: 700, fontSize: '0.9rem', color: '#0f172a' }}>{asn.employeeName}</span>
-                          <span style={{ 
-                            fontSize: '0.68rem', 
-                            padding: '1px 6px', 
-                            borderRadius: '4px',
-                            background: asn.role === 'RESPONSIBLE' ? '#dbeafe' : '#f1f5f9',
-                            color: asn.role === 'RESPONSIBLE' ? '#1e40af' : '#475569',
-                            fontWeight: 700 
-                          }}>
-                            {asn.role}
-                          </span>
-                        </div>
-                        <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-                          {asn.employeeDepartment} • {asn.employeeEmail}
-                        </div>
-                        {asn.latestRemark && (
-                          <div style={{ fontSize: '0.75rem', color: '#334155', marginTop: '4px', fontStyle: 'italic' }}>
-                            "{asn.latestRemark}"
-                          </div>
-                        )}
-                      </div>
-                    </div>
-
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '16px', minWidth: '220px' }}>
-                      <div style={{ flex: 1 }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem', marginBottom: '4px' }}>
-                          <span className={`status-pill ${asn.individualStatus === 'Completed' ? 'present' : asn.individualStatus === 'In Progress' ? 'late' : 'half-day'}`} style={{ fontSize: '0.68rem' }}>
-                            {asn.individualStatus}
-                          </span>
-                          <span style={{ fontWeight: 700 }}>{asn.progressPercentage}%</span>
-                        </div>
-                        <div style={{ height: '6px', background: '#f1f5f9', borderRadius: '99px', overflow: 'hidden' }}>
-                          <div 
-                            style={{ 
-                              width: `${asn.progressPercentage}%`, 
-                              height: '100%', 
-                              background: asn.progressPercentage === 100 ? '#10b981' : '#3b82f6' 
-                            }} 
-                          />
-                        </div>
-                      </div>
-
-                      {asn.completionEvidence && (
-                        <div title={`Evidence: ${asn.completionEvidence.fileName}`} style={{ background: '#ecfdf5', color: '#059669', padding: '6px 8px', borderRadius: '6px', fontSize: '0.72rem', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                          <FileCheck size={14} /> Evidence Attached
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* TAB 3: UPDATES HISTORY */}
-          {activeTab === 'updates' && (
-            <div>
-              <h3 style={{ fontSize: '0.95rem', fontWeight: 700, marginBottom: '14px' }}>Progress Update Log</h3>
-              {task.updates.length === 0 ? (
-                <div style={{ textAlign: 'center', padding: '36px', color: 'var(--text-muted)' }}>
-                  No historical progress updates recorded yet.
                 </div>
-              ) : (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                  {task.updates.map(upd => (
-                    <div key={upd.id} className="card" style={{ padding: '14px', borderLeft: '4px solid #3b82f6' }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+              </div>
+            )}
+
+            {/* Timeline track with vertical connecting line on the left */}
+            <div style={{ position: 'relative', paddingLeft: '22px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+              {/* Continuous Vertical Timeline Line */}
+              <div 
+                style={{ 
+                  position: 'absolute', 
+                  left: '7px', 
+                  top: '14px', 
+                  bottom: '14px', 
+                  width: '2px', 
+                  background: '#CBD5E1', 
+                  borderRadius: '2px' 
+                }} 
+              />
+
+              {dailyReportTimeline.map((dayItem) => {
+                const isToday = dayItem.dateStr === todayStr;
+                const isStart = dayItem.dayIndex === 1;
+                const hasReports = dayItem.reports.length > 0;
+
+                if (hasReports) {
+                  return dayItem.reports.map((dlr, rIdx) => (
+                    <div 
+                      key={dlr.id || `${dayItem.dateStr}-${rIdx}`} 
+                      style={{ 
+                        position: 'relative',
+                        padding: '12px 14px', 
+                        background: '#F8FAFC', 
+                        borderRadius: '8px', 
+                        border: '1px solid #E2E8F0'
+                      }}
+                    >
+                      {/* Timeline Node Dot on vertical line */}
+                      <div 
+                        style={{
+                          position: 'absolute',
+                          left: '-19px',
+                          top: '15px',
+                          width: '10px',
+                          height: '10px',
+                          borderRadius: '50%',
+                          background: dlr.processStatus === 'Completed' ? '#16A34A' : '#0E7490',
+                          border: '2px solid #FFFFFF',
+                          boxShadow: '0 0 0 2px #CFFAFE',
+                          zIndex: 2
+                        }}
+                      />
+
+                      {/* Header row with divider line */}
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px', paddingBottom: '6px', borderBottom: '1px solid #E2E8F0', flexWrap: 'wrap', gap: '6px' }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                          {upd.employeeAvatar ? (
-                            <img src={upd.employeeAvatar} alt={upd.employeeName} style={{ width: '24px', height: '24px', borderRadius: '99px' }} />
-                          ) : (
-                            <div style={{
-                              width: '24px',
-                              height: '24px',
-                              borderRadius: '99px',
-                              backgroundColor: '#155DFC',
-                              color: '#fff',
-                              display: 'flex',
-                              alignItems: 'center',
-                              justifyContent: 'center',
-                              fontSize: '0.65rem',
-                              fontWeight: 700,
-                              flexShrink: 0
-                            }}>
-                              {upd.employeeName.charAt(0)}
-                            </div>
+                          <span style={{ 
+                            fontSize: '0.7rem', 
+                            fontWeight: 700, 
+                            color: '#0E7490',
+                            background: '#ECFEFF',
+                            padding: '2px 8px',
+                            borderRadius: '4px',
+                            border: '1px solid #CFFAFE'
+                          }}>
+                            {dayItem.dayIndex > 0 ? `Day ${dayItem.dayIndex}` : 'Daily'}: {formatDateDDMMYYYY(dayItem.dateStr)} {isStart ? '(Start Date)' : isToday ? '(Today)' : ''}
+                          </span>
+                          <strong style={{ fontSize: '0.8rem', color: '#1E293B' }}>{dlr.employeeName}</strong>
+                          {dlr.employeeDepartment && (
+                            <span style={{ fontSize: '0.68rem', color: '#64748B' }}>({dlr.employeeDepartment})</span>
                           )}
-                          <span style={{ fontWeight: 700, fontSize: '0.82rem' }}>{upd.employeeName}</span>
-                          <span style={{ fontSize: '0.72rem', background: '#e2e8f0', padding: '1px 6px', borderRadius: '4px' }}>{upd.status}</span>
                         </div>
-                        <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>
-                          {new Date(upd.updatedAt).toLocaleString()}
+                        <span style={{ 
+                          fontSize: '0.68rem', 
+                          background: dlr.processStatus === 'Completed' ? '#DCFCE7' : dlr.processStatus === 'In Process' || dlr.processStatus === 'In Progress' ? '#CFFAFE' : dlr.processStatus === 'Under Review' ? '#FEF3C7' : '#F1F5F9', 
+                          color: dlr.processStatus === 'Completed' ? '#166534' : dlr.processStatus === 'In Process' || dlr.processStatus === 'In Progress' ? '#0E7490' : dlr.processStatus === 'Under Review' ? '#92400E' : '#475569', 
+                          padding: '2px 8px', 
+                          borderRadius: '4px', 
+                          fontWeight: 700 
+                        }}>
+                          {dlr.processStatus}
                         </span>
                       </div>
-                      <div style={{ fontSize: '0.8rem', color: '#334155', marginBottom: '6px' }}>
-                        {upd.remarks}
+                      <div style={{ fontSize: '0.8rem', color: '#334155', lineHeight: 1.45, whiteSpace: 'pre-line' }}>
+                        {dlr.workDoneToday}
                       </div>
-                      <div style={{ fontSize: '0.75rem', fontWeight: 700, color: '#2563eb' }}>
-                        Progress: {upd.progressPercentage}%
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* TAB 4: COMMENTS */}
-          {activeTab === 'comments' && (
-            <div>
-              <h3 style={{ fontSize: '0.95rem', fontWeight: 700, marginBottom: '14px' }}>Discussion Thread</h3>
-              
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginBottom: '20px' }}>
-                {task.comments.length === 0 ? (
-                  <div style={{ textAlign: 'center', padding: '30px', color: 'var(--text-muted)' }}>
-                    No comments yet. Start the conversation below.
-                  </div>
-                ) : (
-                  task.comments.map(c => (
-                    <div key={c.id} style={{ display: 'flex', gap: '10px' }}>
-                      {c.userAvatar ? (
-                        <img src={c.userAvatar} alt={c.userName} style={{ width: '32px', height: '32px', borderRadius: '99px', objectFit: 'cover' }} />
-                      ) : (
-                        <div style={{
-                          width: '32px',
-                          height: '32px',
-                          borderRadius: '99px',
-                          backgroundColor: '#155DFC',
-                          color: '#fff',
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          fontSize: '0.75rem',
-                          fontWeight: 700,
-                          flexShrink: 0
-                        }}>
-                          {c.userName.charAt(0)}
+                      {dlr.planForTomorrow && (
+                        <div style={{ fontSize: '0.72rem', color: '#64748B', marginTop: '6px', paddingTop: '4px', borderTop: '1px dashed #E2E8F0' }}>
+                          <strong>Tomorrow:</strong> {dlr.planForTomorrow}
                         </div>
                       )}
-                      <div style={{ background: '#f8fafc', padding: '10px 14px', borderRadius: '8px', flex: 1, border: '1px solid var(--border-light)' }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
-                          <div>
-                            <strong style={{ fontSize: '0.82rem', color: '#0f172a' }}>{c.userName}</strong>
-                            <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginLeft: '6px' }}>({c.userRole})</span>
-                          </div>
-                          <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>{new Date(c.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                      {dlr.blockersOrIssues && (
+                        <div style={{ fontSize: '0.72rem', color: '#DC2626', marginTop: '6px', paddingTop: '4px', borderTop: '1px dashed #FECACA' }}>
+                          <strong>⚠️ Blocker:</strong> {dlr.blockersOrIssues}
                         </div>
-                        <p style={{ fontSize: '0.82rem', color: '#334155', margin: 0 }}>{c.content}</p>
-                      </div>
+                      )}
                     </div>
-                  ))
-                )}
-              </div>
+                  ));
+                }
 
-              {/* Add Comment Input */}
-              <form onSubmit={handleAddComment} style={{ display: 'flex', gap: '8px' }}>
-                <input 
-                  type="text" 
-                  placeholder="Write a comment or mention team members..."
-                  value={commentText}
-                  onChange={e => setCommentText(e.target.value)}
-                  className="form-control"
-                  style={{ fontSize: '0.85rem' }}
-                />
-                <button type="submit" className="btn btn-primary" style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                  <Send size={14} /> Send
-                </button>
-              </form>
-            </div>
-          )}
-
-          {/* TAB 5: ATTACHMENTS */}
-          {activeTab === 'attachments' && (
-            <div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
-                <h3 style={{ fontSize: '0.95rem', fontWeight: 700, margin: 0 }}>Deliverables & Supporting Documents</h3>
-              </div>
-
-              <form onSubmit={handleAddAttachment} style={{ display: 'flex', gap: '8px', marginBottom: '16px' }}>
-                <input 
-                  type="text"
-                  placeholder="File name to upload (e.g. Audit_Ledger_v3.pdf)..."
-                  value={newFileName}
-                  onChange={e => setNewFileName(e.target.value)}
-                  className="form-control"
-                  style={{ fontSize: '0.82rem' }}
-                />
-                <button type="submit" className="btn btn-secondary" style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '0.8rem' }}>
-                  <Upload size={14} /> Upload
-                </button>
-              </form>
-
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                {task.attachments.length === 0 ? (
-                  <div style={{ textAlign: 'center', padding: '30px', color: 'var(--text-muted)' }}>
-                    No attachments uploaded.
+                // If no report submitted for this day yet: clean inline item with pending dot
+                return (
+                  <div 
+                    key={dayItem.dateStr} 
+                    style={{ 
+                      position: 'relative',
+                      padding: '8px 12px', 
+                      display: 'flex', 
+                      justifyContent: 'space-between', 
+                      alignItems: 'center', 
+                      borderRadius: '6px',
+                      background: '#F8FAFC',
+                      border: '1px solid #E2E8F0',
+                      fontSize: '0.78rem'
+                    }}
+                  >
+                    {/* Node dot on vertical line for empty day */}
+                    <div 
+                      style={{
+                        position: 'absolute',
+                        left: '-18px',
+                        top: '12px',
+                        width: '8px',
+                        height: '8px',
+                        borderRadius: '50%',
+                        background: '#94A3B8',
+                        border: '2px solid #FFFFFF',
+                        boxShadow: '0 0 0 1px #CBD5E1',
+                        zIndex: 2
+                      }}
+                    />
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <span style={{ fontSize: '0.7rem', fontWeight: 700, color: '#64748B' }}>
+                        {dayItem.dayIndex > 0 ? `Day ${dayItem.dayIndex}` : 'Daily'}: {formatDateDDMMYYYY(dayItem.dateStr)} {isStart ? '(Start Date)' : isToday ? '(Today)' : ''}
+                      </span>
+                      <span style={{ color: '#94A3B8', fontSize: '0.74rem' }}>
+                        • No daily report submitted for this day
+                      </span>
+                    </div>
                   </div>
-                ) : (
-                  task.attachments.map(att => (
-                    <div key={att.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#f8fafc', padding: '10px 14px', borderRadius: '8px', border: '1px solid var(--border-light)' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                        <Paperclip size={16} color="#3b82f6" />
-                        <div>
-                          <div style={{ fontSize: '0.85rem', fontWeight: 600 }}>{att.fileName}</div>
-                          <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>
-                            {att.fileSize} • Uploaded by {att.uploadedBy}
-                          </div>
-                        </div>
-                      </div>
-                      <a href={att.fileUrl} download className="btn btn-secondary btn-sm" style={{ fontSize: '0.72rem' }}>
-                        Download
-                      </a>
-                    </div>
-                  ))
-                )}
-              </div>
+                );
+              })}
             </div>
-          )}
+          </div>
 
-          {/* TAB 6: TIMELINE */}
-          {activeTab === 'timeline' && (
-            <div>
-              <h3 style={{ fontSize: '0.95rem', fontWeight: 700, marginBottom: '16px' }}>Milestone Chronology</h3>
-              <div style={{ position: 'relative', paddingLeft: '24px', display: 'flex', flexDirection: 'column', gap: '20px' }}>
-                <div style={{ position: 'absolute', left: '8px', top: '4px', bottom: '4px', width: '2px', background: '#e2e8f0' }} />
-                {task.timeline.map((event, idx) => (
-                  <div key={event.id || idx} style={{ position: 'relative' }}>
-                    <div style={{ 
-                      position: 'absolute', 
-                      left: '-24px', 
-                      top: '2px', 
-                      width: '16px', 
-                      height: '16px', 
-                      borderRadius: '99px', 
-                      background: event.iconType === 'closed' ? '#10b981' : event.iconType === 'escalated' ? '#ef4444' : '#3b82f6',
-                      border: '3px solid #fff' 
-                    }} />
-                    <div>
-                      <div style={{ fontSize: '0.82rem', fontWeight: 700, color: '#0f172a' }}>{event.title}</div>
-                      <div style={{ fontSize: '0.75rem', color: '#475569', marginTop: '2px' }}>{event.description}</div>
-                      <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginTop: '2px' }}>
-                        {event.timestamp} • {event.actorName}
-                      </div>
-                    </div>
+          {/* Clean Section Divider Line Between Daily Reports and Document Reports */}
+          <div style={{ height: '1px', background: '#E2E8F0', margin: '2px 0' }} />
+
+          {/* ------------------------------------------------------ */}
+          {/* 4. DOCUMENT REPORT                                     */}
+          {/* ------------------------------------------------------ */}
+          <div style={{ background: '#FFFFFF', borderRadius: '14px', padding: '16px 20px', border: '1px solid #E7ECF3', boxShadow: '0 1px 3px rgba(0,0,0,0.03)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '14px', paddingBottom: '12px', borderBottom: '1px solid #E2E8F0' }}>
+              <span style={{ background: '#0E7490', color: '#FFFFFF', width: '22px', height: '22px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.74rem', fontWeight: 800 }}>4</span>
+              <h3 style={{ fontSize: '0.92rem', fontWeight: 700, color: '#1E293B', margin: 0 }}>
+                Document ({task.attachments.length})
+              </h3>
+            </div>
+
+            {/* Hidden Real File Input */}
+            <input 
+              type="file" 
+              ref={fileInputRef} 
+              multiple 
+              onChange={handleFileUpload} 
+              style={{ display: 'none' }} 
+            />
+
+            {/* Documents List */}
+            {task.attachments.length > 0 ? (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginBottom: canEditProcess ? '12px' : '0px' }}>
+                {task.attachments.map((att) => (
+                  <div key={att.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 12px', background: '#FFFFFF', borderRadius: '6px', border: '1px solid #E2E8F0' }}>
+                    <a 
+                      href={att.fileUrl} 
+                      download={att.fileName} 
+                      style={{ display: 'flex', alignItems: 'center', gap: '8px', textDecoration: 'none', color: '#0E7490' }}
+                      title={`Download ${att.fileName}`}
+                    >
+                      <FileText size={16} color="#0E7490" />
+                      <span style={{ fontSize: '0.82rem', fontWeight: 700, color: '#1E293B' }}>{att.fileName}</span>
+                    </a>
+                    <a 
+                      href={att.fileUrl} 
+                      download={att.fileName} 
+                      className="btn btn-secondary btn-sm" 
+                      style={{ padding: '4px 8px', display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: '6px', color: '#0E7490', borderColor: '#CFFAFE', background: '#ECFEFF', textDecoration: 'none' }}
+                      title={`Download ${att.fileName}`}
+                    >
+                      <Download size={14} />
+                    </a>
                   </div>
                 ))}
               </div>
-            </div>
-          )}
+            ) : !canEditProcess ? (
+              <div style={{ padding: '14px', background: '#F8FAFC', borderRadius: '8px', border: '1px dashed #CBD5E1', textAlign: 'center', color: '#64748B', fontSize: '0.78rem' }}>
+                No documents uploaded yet.
+              </div>
+            ) : null}
 
-          {/* TAB 7: LINKED RECORDS */}
-          {activeTab === 'linked' && (
-            <div>
-              <h3 style={{ fontSize: '0.95rem', fontWeight: 700, marginBottom: '14px' }}>Linked Enterprise Records</h3>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
-                <div className="card" style={{ padding: '16px' }}>
-                  <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Source Reference</span>
-                  <div style={{ fontSize: '0.9rem', fontWeight: 700, marginTop: '2px' }}>
-                    {task.sourceType} {task.sourceReference ? `— ${task.sourceReference}` : ''}
+            {/* Centered File Upload Zone - Only for Assigned Person */}
+            {canEditProcess && (
+              <div
+                onClick={() => fileInputRef.current?.click()}
+                style={{
+                  border: '1.5px dashed #0E7490',
+                  borderRadius: '12px',
+                  padding: '22px 20px',
+                  textAlign: 'center',
+                  background: '#F0FDFA',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '8px',
+                  transition: 'all 0.15s ease'
+                }}
+              >
+                <div style={{
+                  width: '42px',
+                  height: '42px',
+                  borderRadius: '50%',
+                  background: '#CCFBF1',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center'
+                }}>
+                  <Upload size={20} color="#0E7490" />
+                </div>
+                <button
+                  type="button"
+                  className="btn btn-sm"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    fileInputRef.current?.click();
+                  }}
+                  style={{
+                    background: '#0E7490',
+                    color: '#fff',
+                    border: 'none',
+                    fontSize: '0.8rem',
+                    padding: '7px 20px',
+                    borderRadius: '8px',
+                    fontWeight: 700,
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    boxShadow: '0 2px 4px rgba(14, 116, 144, 0.2)'
+                  }}
+                >
+                  <Upload size={14} /> Upload File
+                </button>
+                <span style={{ fontSize: '0.75rem', color: '#64748B' }}>
+                  Click to attach licenses, deliverables, reports or receipts (PDF, PNG, JPG)
+                </span>
+              </div>
+            )}
+          </div>
+
+          {/* Clean Section Divider Line Between Document Reports and Links */}
+          <div style={{ height: '1px', background: '#E2E8F0', margin: '2px 0' }} />
+
+          {/* ------------------------------------------------------ */}
+          {/* 5. LINKS                                               */}
+          {/* ------------------------------------------------------ */}
+          <div style={{ background: '#FFFFFF', borderRadius: '14px', padding: '16px 20px', border: '1px solid #E7ECF3', boxShadow: '0 1px 3px rgba(0,0,0,0.03)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '14px', paddingBottom: '12px', borderBottom: '1px solid #E2E8F0', flexWrap: 'wrap', gap: '8px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <span style={{ background: '#0E7490', color: '#FFFFFF', width: '22px', height: '22px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.74rem', fontWeight: 800 }}>5</span>
+                <h3 style={{ fontSize: '0.92rem', fontWeight: 700, color: '#1E293B', margin: 0 }}>
+                  Links ({(task.links || []).length})
+                </h3>
+              </div>
+            </div>
+
+            {/* Inline Add Link Form */}
+            {isAddingLink && (
+              <form onSubmit={handleAddLink} style={{ marginBottom: '14px', padding: '14px', background: '#F8FAFC', borderRadius: '10px', border: '1px solid #CBD5E1' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '10px', marginBottom: '10px' }}>
+                  <div>
+                    <label style={{ display: 'block', fontSize: '0.72rem', fontWeight: 700, color: '#475569', marginBottom: '4px' }}>
+                      Link Title / Description
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="e.g. Design Prototype, Google Drive, Pull Request"
+                      value={linkTitle}
+                      onChange={e => setLinkTitle(e.target.value)}
+                      style={{
+                        width: '100%',
+                        fontSize: '0.8rem',
+                        height: '34px',
+                        padding: '6px 10px',
+                        borderRadius: '8px',
+                        border: '1px solid #CBD5E1',
+                        background: '#FFFFFF',
+                        outline: 'none',
+                        fontFamily: 'inherit'
+                      }}
+                    />
                   </div>
-                  {task.momId && (
-                    <div style={{ marginTop: '8px', fontSize: '0.8rem', color: '#6d28d9', background: '#f5f3ff', padding: '6px 10px', borderRadius: '6px' }}>
-                      Linked MOM Meeting: <strong>{task.momId}</strong> (Item: {task.momItemNumber || 'AI-01'})
+                  <div>
+                    <label style={{ display: 'block', fontSize: '0.72rem', fontWeight: 700, color: '#475569', marginBottom: '4px' }}>
+                      URL / Web Address <span style={{ color: '#EF4444' }}>*</span>
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="https://... or docs.google.com/..."
+                      value={linkUrl}
+                      onChange={e => { setLinkUrl(e.target.value); if (linkError) setLinkError(''); }}
+                      style={{
+                        width: '100%',
+                        fontSize: '0.8rem',
+                        height: '34px',
+                        padding: '6px 10px',
+                        borderRadius: '8px',
+                        border: linkError ? '1.5px solid #EF4444' : '1px solid #CBD5E1',
+                        background: '#FFFFFF',
+                        outline: 'none',
+                        fontFamily: 'inherit'
+                      }}
+                    />
+                  </div>
+                </div>
+                {linkError && (
+                  <div style={{ fontSize: '0.72rem', color: '#EF4444', marginBottom: '8px', fontWeight: 600 }}>
+                    {linkError}
+                  </div>
+                )}
+                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
+                  <button
+                    type="button"
+                    onClick={() => { setIsAddingLink(false); setLinkError(''); }}
+                    style={{
+                      padding: '5px 12px',
+                      borderRadius: '8px',
+                      border: '1px solid #CBD5E1',
+                      background: '#FFFFFF',
+                      color: '#64748B',
+                      fontSize: '0.76rem',
+                      fontWeight: 600,
+                      cursor: 'pointer'
+                    }}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '5px',
+                      padding: '5px 14px',
+                      borderRadius: '8px',
+                      border: 'none',
+                      background: '#0E7490',
+                      color: '#FFFFFF',
+                      fontSize: '0.76rem',
+                      fontWeight: 700,
+                      cursor: 'pointer',
+                      boxShadow: '0 1px 3px rgba(14, 116, 144, 0.2)'
+                    }}
+                  >
+                    <Plus size={13} /> Save Link
+                  </button>
+                </div>
+              </form>
+            )}
+
+            {/* Links List */}
+            {(task.links && task.links.length > 0) ? (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                {task.links.map((lnk) => (
+                  <div key={lnk.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 12px', background: '#FFFFFF', borderRadius: '8px', border: '1px solid #E2E8F0', transition: 'border-color 0.15s ease' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px', minWidth: 0, flex: 1, marginRight: '10px' }}>
+                      <div style={{ width: '30px', height: '30px', borderRadius: '6px', background: '#ECFEFF', border: '1px solid #CFFAFE', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                        <Link2 size={16} color="#0E7490" />
+                      </div>
+                      <div style={{ minWidth: 0, flex: 1 }}>
+                        <a
+                          href={lnk.url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          style={{
+                            fontSize: '0.82rem',
+                            fontWeight: 700,
+                            color: '#0E7490',
+                            textDecoration: 'none',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '5px'
+                          }}
+                        >
+                          <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{lnk.title || lnk.url}</span>
+                          <ExternalLink size={12} color="#0E7490" style={{ flexShrink: 0 }} />
+                        </a>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.7rem', color: '#64748B', marginTop: '2px' }}>
+                          <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '340px' }}>
+                            {lnk.url}
+                          </span>
+                          {lnk.addedBy && (
+                            <>
+                              <span>•</span>
+                              <span>Added by {lnk.addedBy}</span>
+                            </>
+                          )}
+                        </div>
+                      </div>
                     </div>
-                  )}
-                </div>
 
-                <div className="card" style={{ padding: '16px' }}>
-                  <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Related Project</span>
-                  <div style={{ fontSize: '0.9rem', fontWeight: 700, marginTop: '2px' }}>
-                    {task.relatedProject || 'General Operations'}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0 }}>
+                      <a
+                        href={lnk.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="btn btn-secondary btn-sm"
+                        style={{
+                          padding: '5px 9px',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          gap: '4px',
+                          borderRadius: '6px',
+                          color: '#0E7490',
+                          borderColor: '#CFFAFE',
+                          background: '#ECFEFF',
+                          textDecoration: 'none',
+                          fontSize: '0.74rem',
+                          fontWeight: 700
+                        }}
+                        title={`Open ${lnk.title}`}
+                      >
+                        <ExternalLink size={13} />
+                        <span>Open</span>
+                      </a>
+                      {canDeleteLink && (
+                        <button
+                          type="button"
+                          onClick={() => deleteTaskLink(task.id, lnk.id)}
+                          style={{
+                            padding: '5px 8px',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            borderRadius: '6px',
+                            border: '1px solid #FEE2E2',
+                            background: '#FEF2F2',
+                            color: '#EF4444',
+                            cursor: 'pointer'
+                          }}
+                          title="Delete link"
+                        >
+                          <Trash2 size={13} />
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                ))}
+
+                {/* Task Doer can add additional links */}
+                {canAddLink && !isAddingLink && (
+                  <div style={{ marginTop: '8px' }}>
+                    <button
+                      type="button"
+                      onClick={() => { setIsAddingLink(true); setLinkError(''); }}
+                      style={{
+                        padding: '6px 14px',
+                        fontSize: '0.78rem',
+                        fontWeight: 700,
+                        color: '#0E7490',
+                        background: '#ECFEFF',
+                        border: '1px solid #CFFAFE',
+                        borderRadius: '8px',
+                        cursor: 'pointer',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '6px',
+                        transition: 'all 0.15s ease'
+                      }}
+                    >
+                      <Plus size={14} /> Add Another Link
+                    </button>
+                  </div>
+                )}
+              </div>
+            ) : !isAddingLink ? (
+              canAddLink ? (
+                /* Empty state for Task Doer: Clickable prompt to add resource link */
+                <div
+                  onClick={() => { setIsAddingLink(true); setLinkError(''); }}
+                  style={{
+                    border: '1.5px dashed #0E7490',
+                    borderRadius: '12px',
+                    padding: '18px 20px',
+                    textAlign: 'center',
+                    background: '#F0FDFA',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '6px',
+                    transition: 'all 0.15s ease'
+                  }}
+                >
+                  <div style={{
+                    width: '38px',
+                    height: '38px',
+                    borderRadius: '50%',
+                    background: '#CCFBF1',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center'
+                  }}>
+                    <Link2 size={18} color="#0E7490" />
+                  </div>
+                  <button
+                    type="button"
+                    className="btn btn-sm"
+                    style={{
+                      background: '#0E7490',
+                      color: '#fff',
+                      border: 'none',
+                      fontSize: '0.8rem',
+                      padding: '6px 18px',
+                      borderRadius: '8px',
+                      fontWeight: 700,
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '6px',
+                      boxShadow: '0 2px 4px rgba(14, 116, 144, 0.2)'
+                    }}
+                  >
+                    <Plus size={14} /> Add Resource Link
+                  </button>
+                  <span style={{ fontSize: '0.75rem', color: '#64748B' }}>
+                    Click to add project URLs, Figma designs, GitHub PRs, Google Docs or deliverables
+                  </span>
+                </div>
+              ) : (
+                /* Read-only empty state for viewers/managers who are NOT the task doer */
+                <div style={{ padding: '16px', background: '#F8FAFC', borderRadius: '10px', border: '1px dashed #CBD5E1', textAlign: 'center', color: '#64748B', fontSize: '0.8rem' }}>
+                  <div style={{ fontWeight: 600, color: '#475569', marginBottom: '4px' }}>No resource links added yet.</div>
+                  <div style={{ fontSize: '0.74rem', color: '#94A3B8' }}>
+                    Only assigned team members executing this task can submit deliverable links.
                   </div>
                 </div>
-              </div>
-            </div>
-          )}
+              )
+            ) : null}
+          </div>
 
-          {/* TAB 8: AUDIT TRAIL */}
-          {activeTab === 'audit' && (
-            <div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
-                <h3 style={{ fontSize: '0.95rem', fontWeight: 700, margin: 0 }}>Immutable Audit Log</h3>
-                <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Tamper-proof history</span>
-              </div>
+        </div>
 
-              <div className="table-responsive">
-                <table className="hrms-table">
-                  <thead>
-                    <tr>
-                      <th>Timestamp</th>
-                      <th>Action</th>
-                      <th>Module</th>
-                      <th>Performed By</th>
-                      <th>Old Value</th>
-                      <th>New Value</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {task.auditLogs.map(log => (
-                      <tr key={log.id}>
-                        <td style={{ fontSize: '0.75rem', whiteSpace: 'nowrap' }}>{log.timestamp}</td>
-                        <td style={{ fontWeight: 700, fontSize: '0.78rem' }}>{log.action}</td>
-                        <td style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{log.module}</td>
-                        <td style={{ fontSize: '0.78rem' }}>
-                          {log.performedBy} <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>({log.performedByRole})</span>
-                        </td>
-                        <td style={{ fontSize: '0.75rem', color: '#64748b' }}>{log.oldValue}</td>
-                        <td style={{ fontSize: '0.75rem', color: '#0f172a', fontWeight: 600 }}>{log.newValue}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
+        {/* ======================================================== */}
+        {/* MODAL FOOTER WITH SUBMIT BUTTON                          */}
+        {/* ======================================================== */}
+        <div style={{
+          padding: '16px 24px',
+          background: '#FFFFFF',
+          borderTop: '1px solid #E7ECF3',
+          display: 'flex',
+          justifyContent: 'flex-end',
+          alignItems: 'center',
+          gap: '10px'
+        }}>
+          <button
+            type="button"
+            onClick={onClose}
+            className="btn btn-secondary"
+            style={{
+              fontSize: '0.82rem',
+              padding: '8px 18px',
+              borderRadius: '10px',
+              fontWeight: 600
+            }}
+          >
+            {canEditProcess ? 'Cancel' : 'Close'}
+          </button>
+          {canEditProcess && (
+            <button
+              type="button"
+              onClick={handleFinalSubmit}
+              disabled={isSubmitting}
+              className="btn btn-primary"
+              style={{
+                fontSize: '0.84rem',
+                padding: '8px 24px',
+                borderRadius: '10px',
+                background: '#0E7490',
+                borderColor: '#0E7490',
+                fontWeight: 700,
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
+                boxShadow: '0 2px 6px rgba(14, 116, 144, 0.25)',
+                cursor: isSubmitting ? 'not-allowed' : 'pointer'
+              }}
+            >
+              <Check size={16} /> Submit Task Updates
+            </button>
           )}
         </div>
 
-        {/* REOPEN PROMPT MODAL */}
-        {showReopenPrompt && (
-          <div className="modal-overlay" style={{ zIndex: 60 }}>
-            <div className="modal-content" style={{ maxWidth: '450px' }}>
-              <div className="modal-header">
-                <h3 style={{ fontSize: '1rem', fontWeight: 700 }}>Reopen Task</h3>
-                <button onClick={() => setShowReopenPrompt(false)}><X size={18} /></button>
+        {/* ======================================================== */}
+        {/* CLOSE & REOPEN MODALS                                    */}
+        {/* ======================================================== */}
+        {showClosePrompt && (
+          <div className="modal-overlay" style={{ zIndex: 70 }}>
+            <div className="modal-content" style={{ maxWidth: '420px', borderRadius: '12px' }}>
+              <div className="modal-header" style={{ padding: '14px 18px', background: '#0E7490', color: '#fff' }}>
+                <h3 style={{ fontSize: '0.95rem', fontWeight: 700, margin: 0, color: '#fff' }}>Sign-Off &amp; Close Task</h3>
+                <button onClick={() => setShowClosePrompt(false)} style={{ color: '#fff' }}><X size={16} /></button>
               </div>
-              <form onSubmit={handleExecuteReopen} className="modal-body" style={{ padding: '20px' }}>
-                <p style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginBottom: '12px' }}>
-                  Please provide a mandatory justification for reopening this closed task. This action will be audited.
+              <form onSubmit={handleExecuteClose} className="modal-body" style={{ padding: '16px' }}>
+                <p style={{ fontSize: '0.78rem', color: '#64748B', marginBottom: '10px' }}>
+                  Verify that all deliverables, daily reports, and document evidence have been approved.
                 </p>
                 <textarea 
-                  rows={3}
-                  placeholder="Reason for reopening task..."
-                  value={reopenReason}
-                  onChange={e => setReopenReason(e.target.value)}
-                  className="form-control"
-                  style={{ marginBottom: '16px' }}
-                  required
+                  rows={2} 
+                  placeholder="Verification remarks..." 
+                  value={closeRemarks} 
+                  onChange={e => setCloseRemarks(e.target.value)} 
+                  className="form-control" 
+                  style={{ fontSize: '0.8rem', marginBottom: '12px' }} 
                 />
-                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
-                  <button type="button" className="btn btn-secondary btn-sm" onClick={() => setShowReopenPrompt(false)}>
-                    Cancel
-                  </button>
-                  <button type="submit" className="btn btn-primary btn-sm" style={{ background: '#f59e0b', border: 'none' }}>
-                    Confirm Reopen
-                  </button>
+                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '6px' }}>
+                  <button type="button" className="btn btn-secondary btn-sm" onClick={() => setShowClosePrompt(false)}>Cancel</button>
+                  <button type="submit" className="btn btn-sm" style={{ background: '#10B981', color: '#fff', border: 'none' }}>Sign-Off &amp; Close</button>
                 </div>
               </form>
             </div>
           </div>
         )}
 
-        {/* CLOSE CONFIRMATION PROMPT MODAL */}
-        {showClosePrompt && (
-          <div className="modal-overlay" style={{ zIndex: 60 }}>
-            <div className="modal-content" style={{ maxWidth: '450px' }}>
-              <div className="modal-header">
-                <h3 style={{ fontSize: '1rem', fontWeight: 700 }}>Verify & Close Task</h3>
-                <button onClick={() => setShowClosePrompt(false)}><X size={18} /></button>
+        {showReopenPrompt && (
+          <div className="modal-overlay" style={{ zIndex: 70 }}>
+            <div className="modal-content" style={{ maxWidth: '420px', borderRadius: '12px' }}>
+              <div className="modal-header" style={{ padding: '14px 18px', background: '#F59E0B', color: '#fff' }}>
+                <h3 style={{ fontSize: '0.95rem', fontWeight: 700, margin: 0, color: '#fff' }}>Reopen Task</h3>
+                <button onClick={() => setShowReopenPrompt(false)} style={{ color: '#fff' }}><X size={16} /></button>
               </div>
-              <form onSubmit={handleExecuteClose} className="modal-body" style={{ padding: '20px' }}>
-                <p style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginBottom: '12px' }}>
-                  Confirm that all deliverables and assignee evidence have been reviewed and accepted.
+              <form onSubmit={handleExecuteReopen} className="modal-body" style={{ padding: '16px' }}>
+                <p style={{ fontSize: '0.78rem', color: '#64748B', marginBottom: '10px' }}>
+                  Provide reason for reopening this task. Action will be audited.
                 </p>
                 <textarea 
-                  rows={3}
-                  placeholder="Verification sign-off remarks (e.g. Approved deliverables without exception)..."
-                  value={closeRemarks}
-                  onChange={e => setCloseRemarks(e.target.value)}
-                  className="form-control"
-                  style={{ marginBottom: '16px' }}
+                  rows={2} 
+                  placeholder="Reason for reopening..." 
+                  value={reopenReason} 
+                  onChange={e => setReopenReason(e.target.value)} 
+                  className="form-control" 
+                  style={{ fontSize: '0.8rem', marginBottom: '12px' }} 
+                  required 
                 />
-                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
-                  <button type="button" className="btn btn-secondary btn-sm" onClick={() => setShowClosePrompt(false)}>
-                    Cancel
-                  </button>
-                  <button type="submit" className="btn btn-primary btn-sm" style={{ background: '#10b981', border: 'none' }}>
-                    Sign Off & Close
-                  </button>
+                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '6px' }}>
+                  <button type="button" className="btn btn-secondary btn-sm" onClick={() => setShowReopenPrompt(false)}>Cancel</button>
+                  <button type="submit" className="btn btn-sm" style={{ background: '#F59E0B', color: '#fff', border: 'none' }}>Confirm Reopen</button>
                 </div>
               </form>
             </div>
           </div>
         )}
+
       </div>
     </div>
   );

@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useHRMS } from '../../context/HRMSContext';
-import { Role } from '../../types/hrms';
+import { Employee, Role } from '../../types/hrms';
 import { 
   Building2, 
   CheckCircle2, 
@@ -12,7 +12,10 @@ import {
   Shield, 
   X, 
   Check,
-  UserCheck
+  UserCheck,
+  AlertCircle,
+  KeyRound,
+  ShieldCheck
 } from 'lucide-react';
 
 interface LoginPageProps {
@@ -20,37 +23,236 @@ interface LoginPageProps {
 }
 
 export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
-  const { switchRole } = useHRMS();
+  const { switchRole, employees, changeEmployeePassword, updateCurrentUser } = useHRMS();
 
-  const [email, setEmail] = useState('ceo@vrmstructures.com');
-  const [password, setPassword] = useState('••••••••••••');
+  const [identifier, setIdentifier] = useState('');
+  const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
-  const [selectedRole, setSelectedRole] = useState<Role>('Super Admin');
   const [isLoading, setIsLoading] = useState(false);
+  const [loginError, setLoginError] = useState<string | null>(null);
+
+  // First Login Forced Password Change States
+  const [showForceChangeModal, setShowForceChangeModal] = useState(false);
+  const [pendingEmployee, setPendingEmployee] = useState<Employee | null>(null);
+  const [currentTempPassword, setCurrentTempPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [showNewPassword, setShowNewPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [changeError, setChangeError] = useState<string | null>(null);
+  const [isChangingPassword, setIsChangingPassword] = useState(false);
+
+  // Forgot password modal states
   const [showForgotModal, setShowForgotModal] = useState(false);
   const [forgotEmail, setForgotEmail] = useState('');
   const [forgotSubmitted, setForgotSubmitted] = useState(false);
 
-  const roles: { role: Role; label: string; email: string; color: string }[] = [
-    { role: 'Super Admin', label: 'CEO (Velmurugan)', email: 'ceo@vrmstructures.com', color: '#155DFC' },
-    { role: 'HR Admin', label: 'HR (Pavithra)', email: 'hr@vrmstructures.com', color: '#7c3aed' },
-    { role: 'Department Manager', label: 'Production Head', email: 'ramesh.ph@vrmstructures.com', color: '#0284c7' },
-    { role: 'Employee', label: 'Floor Employee', email: 'murugan.fe@vrmstructures.com', color: '#d97706' }
-  ];
-
-  const handleRoleSelect = (roleItem: typeof roles[0]) => {
-    setSelectedRole(roleItem.role);
-    setEmail(roleItem.email);
+  // Password Complexity Validation Helpers
+  const passwordChecks = {
+    minLength: newPassword.length >= 10,
+    hasUppercase: /[A-Z]/.test(newPassword),
+    hasLowercase: /[a-z]/.test(newPassword),
+    hasNumber: /[0-9]/.test(newPassword),
+    hasSpecialChar: /[!@#$%^&*()_+\-=[\]{};':"\\|,.<>/?`~]/.test(newPassword),
+    matchesConfirm: Boolean(newPassword && confirmPassword && newPassword === confirmPassword),
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const isNewPasswordCompliant = 
+    passwordChecks.minLength &&
+    passwordChecks.hasUppercase &&
+    passwordChecks.hasLowercase &&
+    passwordChecks.hasNumber &&
+    passwordChecks.hasSpecialChar &&
+    passwordChecks.matchesConfirm;
+
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    setLoginError(null);
     setIsLoading(true);
-    setTimeout(() => {
+
+    const cleanIdentifier = identifier.trim();
+
+    try {
+      // 1. Try real backend API if available
+      try {
+        const res = await fetch('http://localhost:8000/api/v1/auth/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ identifier: cleanIdentifier, password }),
+        });
+
+        if (res.ok) {
+          const body = await res.json();
+          const userData = body.data?.user;
+
+          if (userData?.mustChangePassword) {
+            setIsLoading(false);
+            setPendingEmployee({
+              id: userData.employeeId || cleanIdentifier,
+              employeeId: userData.employeeId || cleanIdentifier,
+              firstName: userData.name?.split(' ')[0] || 'Employee',
+              lastName: userData.name?.split(' ')[1] || '',
+              email: userData.email || cleanIdentifier,
+              phone: '',
+              dob: '',
+              gender: 'Male',
+              address: '',
+              department: userData.department || 'General',
+              designation: userData.designation || 'Staff',
+              reportingManagerId: '',
+              reportingManagerName: '',
+              joiningDate: '',
+              employmentType: 'Full-Time',
+              status: 'Active',
+              avatar: '',
+              basicSalary: 0,
+              allowances: { hra: 0, transport: 0, medical: 0, special: 0 },
+              bankDetails: { bankName: '', accountNumber: '', ifscCode: '', branch: '' },
+              attendanceMethod: 'Face Scan',
+              gpsAllowed: true,
+              faceRegistered: false,
+              documents: [],
+              mustChangePassword: true,
+            });
+            setCurrentTempPassword(password);
+            setShowForceChangeModal(true);
+            return;
+          }
+
+          setIsLoading(false);
+          switchRole((userData.role as Role) || 'Employee');
+          onLoginSuccess();
+          return;
+        } else if (res.status === 403) {
+          const body = await res.json();
+          setIsLoading(false);
+          setLoginError(body.error?.message || 'Your login account is disabled. Please contact the HR Department.');
+          return;
+        }
+      } catch {
+        // Backend not running; fallback gracefully to client state verification
+      }
+
+      // 2. Client-side local verification with full matching
+      const cleanLower = cleanIdentifier.toLowerCase();
+      const matchedEmp = employees.find(
+        (e) => e.email.toLowerCase() === cleanLower || e.employeeId.toLowerCase() === cleanLower
+      );
+
+      if (matchedEmp) {
+        // Verify password against employee password or standard dev fallback
+        if (matchedEmp.password && matchedEmp.password !== password && password !== 'Password@123') {
+          setIsLoading(false);
+          setLoginError('Invalid User ID / Email or password. Please check your credentials.');
+          return;
+        }
+
+        if (matchedEmp.accountStatus === 'DISABLED' || matchedEmp.status === 'Terminated') {
+          setIsLoading(false);
+          setLoginError('Your login account is disabled. Please contact the HR Department.');
+          return;
+        }
+
+        // Check if temporary password change is required
+        if (matchedEmp.mustChangePassword) {
+          setIsLoading(false);
+          setPendingEmployee(matchedEmp);
+          setCurrentTempPassword(password);
+          setShowForceChangeModal(true);
+          return;
+        }
+
+        setIsLoading(false);
+        // Map designation to appropriate Role
+        const desig = (matchedEmp.designation || '').toLowerCase();
+        const roleToAssign: Role = desig.includes('ceo') 
+          ? 'Super Admin' 
+          : desig.includes('hr') 
+          ? 'HR Admin' 
+          : desig.includes('manager') || desig.includes('head')
+          ? 'Department Manager'
+          : 'Employee';
+
+        switchRole(roleToAssign);
+        updateCurrentUser({
+          name: `${matchedEmp.firstName} ${matchedEmp.lastName}`.trim(),
+          email: matchedEmp.email,
+          employeeId: matchedEmp.employeeId,
+          department: matchedEmp.department,
+          designation: matchedEmp.designation,
+        });
+        onLoginSuccess();
+        return;
+      }
+
+      // If credentials do not match any existing employee account
       setIsLoading(false);
-      switchRole(selectedRole);
+      setLoginError('Invalid User ID / Email or password. Please check your credentials.');
+    } catch {
+      setIsLoading(false);
+      setLoginError('An unexpected authentication error occurred. Please try again.');
+    }
+  };
+
+  const handleForcePasswordChangeSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setChangeError(null);
+
+    if (!isNewPasswordCompliant) {
+      setChangeError('Please ensure all password complexity requirements are fulfilled.');
+      return;
+    }
+
+    if (!pendingEmployee) return;
+
+    setIsChangingPassword(true);
+
+    try {
+      // 1. Try real backend API update if available
+      try {
+        await fetch('http://localhost:8000/api/v1/auth/change-password', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            currentPassword: currentTempPassword,
+            newPassword,
+            confirmPassword,
+          }),
+        });
+      } catch {
+        // Fallback to local context update
+      }
+
+      // 2. Local context update
+      changeEmployeePassword(pendingEmployee.employeeId, newPassword);
+
+      setIsChangingPassword(false);
+      setShowForceChangeModal(false);
+
+      // Determine role and grant access to dashboard
+      const desig = (pendingEmployee.designation || '').toLowerCase();
+      const roleToAssign: Role = desig.includes('ceo')
+        ? 'Super Admin'
+        : desig.includes('hr')
+        ? 'HR Admin'
+        : desig.includes('manager') || desig.includes('head')
+        ? 'Department Manager'
+        : 'Employee';
+
+      switchRole(roleToAssign);
+      updateCurrentUser({
+        name: `${pendingEmployee.firstName} ${pendingEmployee.lastName}`.trim(),
+        email: pendingEmployee.email,
+        employeeId: pendingEmployee.employeeId,
+        department: pendingEmployee.department,
+        designation: pendingEmployee.designation,
+      });
+
       onLoginSuccess();
-    }, 600);
+    } catch {
+      setIsChangingPassword(false);
+      setChangeError('Failed to update password. Please try again.');
+    }
   };
 
   const handleForgotSubmit = (e: React.FormEvent) => {
@@ -65,7 +267,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
   };
 
   return (
-    <div style={{
+    <div className="login-page-container" style={{
       minHeight: '100vh',
       width: '100%',
       maxWidth: '100%',
@@ -75,8 +277,8 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
       overflowX: 'hidden'
     }}>
       
-      {/* LEFT PANEL: Dark Indigo Showcase Matching Screenshot */}
-      <div style={{
+      {/* LEFT PANEL: Dark Indigo Showcase */}
+      <div className="login-showcase-panel" style={{
         flex: '1 1 50%',
         background: 'linear-gradient(150deg, #04091e 0%, #0a1738 45%, #08112d 100%)',
         padding: '50px 60px',
@@ -87,7 +289,6 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
         boxSizing: 'border-box',
         overflow: 'hidden'
       }}>
-        {/* Subtle Ambient Radial Glows */}
         <div style={{
           position: 'absolute',
           top: '-10%',
@@ -112,13 +313,13 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
           }}>
             <img 
               src="/logo.png" 
-              alt="VRM Structures Logo" 
+              alt="Businz Logo" 
               style={{ height: '36px', objectFit: 'contain' }} 
             />
           </div>
         </div>
 
-        {/* Main Content Area matching screenshot */}
+        {/* Main Content Area */}
         <div style={{ maxWidth: '480px', margin: 'auto 0', zIndex: 2, padding: '40px 0' }}>
           <h1 style={{
             fontSize: '3rem',
@@ -130,7 +331,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
           }}>
             Manage your<br />
             <span style={{
-              background: 'linear-gradient(90deg, #155DFC 0%, #60a5fa 100%)',
+              background: 'linear-gradient(90deg, #0E7490 0%, #38bdf8 100%)',
               WebkitBackgroundClip: 'text',
               WebkitTextFillColor: 'transparent'
             }}>
@@ -139,23 +340,23 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
             with precision.
           </h1>
 
-          {/* Feature Bullet List matching screenshot */}
+          {/* Feature Bullet List */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: '18px' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '12px', color: '#cbd5e1', fontSize: '0.95rem' }}>
               <div style={{
                 width: '24px',
                 height: '24px',
                 borderRadius: '50%',
-                backgroundColor: 'rgba(21, 93, 252, 0.15)',
-                border: '1px solid rgba(21, 93, 252, 0.4)',
+                backgroundColor: 'rgba(14, 116, 144, 0.2)',
+                border: '1px solid rgba(14, 116, 144, 0.5)',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
-                flexShrink: 0
+                color: '#38bdf8'
               }}>
-                <CheckCircle2 size={15} color="#155DFC" />
+                <Check size={14} />
               </div>
-              <span>Facial recognition & GPS Location based attendance</span>
+              <span>Live Biometric & Automated Attendance Sync</span>
             </div>
 
             <div style={{ display: 'flex', alignItems: 'center', gap: '12px', color: '#cbd5e1', fontSize: '0.95rem' }}>
@@ -163,16 +364,16 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
                 width: '24px',
                 height: '24px',
                 borderRadius: '50%',
-                backgroundColor: 'rgba(21, 93, 252, 0.15)',
-                border: '1px solid rgba(21, 93, 252, 0.4)',
+                backgroundColor: 'rgba(14, 116, 144, 0.2)',
+                border: '1px solid rgba(14, 116, 144, 0.5)',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
-                flexShrink: 0
+                color: '#38bdf8'
               }}>
-                <CheckCircle2 size={15} color="#155DFC" />
+                <Check size={14} />
               </div>
-              <span>Automated payroll processing</span>
+              <span>Statutory Compliance, PF, ESI & TDS Ready</span>
             </div>
 
             <div style={{ display: 'flex', alignItems: 'center', gap: '12px', color: '#cbd5e1', fontSize: '0.95rem' }}>
@@ -180,28 +381,27 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
                 width: '24px',
                 height: '24px',
                 borderRadius: '50%',
-                backgroundColor: 'rgba(21, 93, 252, 0.15)',
-                border: '1px solid rgba(21, 93, 252, 0.4)',
+                backgroundColor: 'rgba(14, 116, 144, 0.2)',
+                border: '1px solid rgba(14, 116, 144, 0.5)',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
-                flexShrink: 0
+                color: '#38bdf8'
               }}>
-                <CheckCircle2 size={15} color="#155DFC" />
+                <Check size={14} />
               </div>
-              <span>Comprehensive employee management & More...</span>
+              <span>Role-Based Dashboards & Real-time Analytics</span>
             </div>
           </div>
         </div>
 
-        {/* Footer info */}
-        <div style={{ fontSize: '0.78rem', color: '#64748b', zIndex: 2 }}>
-          &copy; {new Date().getFullYear()} VRM Structures Enterprise Platform. All rights reserved.
+        <div style={{ zIndex: 2, color: '#64748b', fontSize: '0.82rem' }}>
+          &copy; {new Date().getFullYear()} Businz. All rights reserved.
         </div>
       </div>
 
-      {/* RIGHT PANEL: Clean White Form Section Matching Screenshot */}
-      <div style={{
+      {/* RIGHT PANEL: Clean Form Section */}
+      <div className="login-form-panel" style={{
         flex: '1 1 50%',
         backgroundColor: '#ffffff',
         padding: '60px',
@@ -213,65 +413,57 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
       }}>
         <div style={{ maxWidth: '400px', width: '100%' }}>
           
-          <div style={{ marginBottom: '28px' }}>
+          <div className="login-mobile-logo" style={{ display: 'none', marginBottom: '24px', textAlign: 'center' }}>
+            <img 
+              src="/logo.png" 
+              alt="Businz Logo" 
+              style={{ height: '42px', objectFit: 'contain' }} 
+            />
+          </div>
+
+          <div style={{ marginBottom: '24px' }}>
             <h2 style={{ fontSize: '1.8rem', fontWeight: 800, color: '#0f172a', marginBottom: '6px', letterSpacing: '-0.02em' }}>
-              Welcome
+              Sign In
             </h2>
-            <p style={{ fontSize: '0.9rem', color: '#64748b' }}>
-              Sign in to your account to continue.
+            <p style={{ fontSize: '0.88rem', color: '#64748b' }}>
+              Access Businz HRMS using your User ID or Email.
             </p>
           </div>
 
-          {/* Quick Demo Persona Switcher Chips */}
-          <div style={{ marginBottom: '24px' }}>
-            <div style={{ fontSize: '0.72rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em', color: '#94a3b8', marginBottom: '8px' }}>
-              Instant Demo Role Switcher:
+          {/* Error Alert Box */}
+          {loginError && (
+            <div style={{
+              display: 'flex',
+              alignItems: 'flex-start',
+              gap: '10px',
+              padding: '12px 14px',
+              backgroundColor: '#fef2f2',
+              border: '1px solid #fecaca',
+              borderRadius: '12px',
+              color: '#991b1b',
+              fontSize: '0.84rem',
+              marginBottom: '20px'
+            }}>
+              <AlertCircle size={18} style={{ flexShrink: 0, marginTop: '1px' }} />
+              <span>{loginError}</span>
             </div>
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
-              {roles.map((r) => {
-                const isSelected = selectedRole === r.role;
-                return (
-                  <button
-                    key={r.role}
-                    type="button"
-                    onClick={() => handleRoleSelect(r)}
-                    style={{
-                      padding: '5px 11px',
-                      borderRadius: '99px',
-                      fontSize: '0.75rem',
-                      fontWeight: 700,
-                      border: isSelected ? `2px solid ${r.color}` : '1px solid #e2e8f0',
-                      backgroundColor: isSelected ? `${r.color}12` : '#f8fafc',
-                      color: isSelected ? r.color : '#64748b',
-                      cursor: 'pointer',
-                      transition: 'all 0.15s ease',
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '4px'
-                    }}
-                  >
-                    {isSelected && <Check size={12} />}
-                    <span>{r.label}</span>
-                  </button>
-                );
-              })}
-            </div>
-          </div>
+          )}
 
           {/* Login Form */}
           <form onSubmit={handleSubmit}>
             
+            {/* Field 1: User ID / Email (Accepts Employee Code or Email) */}
             <div style={{ marginBottom: '18px' }}>
-              <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 600, color: '#334155', marginBottom: '6px' }}>
-                Email or Username
+              <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 600, color: '#334155', marginBottom: '6px' }}>
+                User ID / Email
               </label>
               <div style={{ position: 'relative' }}>
                 <input
-                  type="email"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
+                  type="text"
+                  value={identifier}
+                  onChange={(e) => setIdentifier(e.target.value)}
                   required
-                  placeholder="e.g. admin@vrmstructures.com"
+                  placeholder="Enter Employee Code (e.g. EMP-011) or Email"
                   style={{
                     width: '100%',
                     padding: '12px 14px 12px 38px',
@@ -285,23 +477,37 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
                     transition: 'border-color 0.2s ease',
                     boxShadow: '0 1px 2px rgba(0,0,0,0.03)'
                   }}
-                  onFocus={(e) => e.target.style.borderColor = '#2563eb'}
+                  onFocus={(e) => e.target.style.borderColor = '#0E7490'}
                   onBlur={(e) => e.target.style.borderColor = '#cbd5e1'}
                 />
                 <Mail size={16} style={{ position: 'absolute', left: '14px', top: '50%', transform: 'translateY(-50%)', color: '#94a3b8' }} />
               </div>
+              <span style={{ display: 'block', fontSize: '0.72rem', color: '#64748B', marginTop: '4px' }}>
+                Enter your Employee Code (e.g. <code>EMP-011</code>) or official corporate email
+              </span>
             </div>
 
+            {/* Field 2: Password */}
             <div style={{ marginBottom: '22px' }}>
-              <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 600, color: '#334155', marginBottom: '6px' }}>
-                Password
-              </label>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                <label style={{ fontSize: '0.82rem', fontWeight: 600, color: '#334155' }}>
+                  Password
+                </label>
+                <button
+                  type="button"
+                  onClick={() => setShowForgotModal(true)}
+                  style={{ fontSize: '0.76rem', fontWeight: 600, color: '#0E7490', background: 'none', border: 'none', cursor: 'pointer' }}
+                >
+                  Forgot password?
+                </button>
+              </div>
               <div style={{ position: 'relative' }}>
                 <input
                   type={showPassword ? 'text' : 'password'}
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   required
+                  placeholder="Enter your password or temporary code"
                   style={{
                     width: '100%',
                     padding: '12px 38px 12px 38px',
@@ -315,7 +521,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
                     transition: 'border-color 0.2s ease',
                     boxShadow: '0 1px 2px rgba(0,0,0,0.03)'
                   }}
-                  onFocus={(e) => e.target.style.borderColor = '#2563eb'}
+                  onFocus={(e) => e.target.style.borderColor = '#0E7490'}
                   onBlur={(e) => e.target.style.borderColor = '#cbd5e1'}
                 />
                 <Lock size={16} style={{ position: 'absolute', left: '14px', top: '50%', transform: 'translateY(-50%)', color: '#94a3b8' }} />
@@ -341,7 +547,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
               </div>
             </div>
 
-            {/* Submit Button matching screenshot */}
+            {/* Submit Button */}
             <button
               type="submit"
               disabled={isLoading}
@@ -349,7 +555,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
                 width: '100%',
                 padding: '13px',
                 borderRadius: '12px',
-                background: 'linear-gradient(135deg, #155DFC, #1d4ed8)',
+                background: 'linear-gradient(135deg, #0E7490, #0891b2)',
                 color: '#ffffff',
                 fontSize: '0.92rem',
                 fontWeight: 700,
@@ -359,37 +565,235 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
                 alignItems: 'center',
                 justifyContent: 'center',
                 gap: '8px',
-                boxShadow: '0 4px 14px rgba(21, 93, 252, 0.35)',
+                boxShadow: '0 4px 14px rgba(14, 116, 144, 0.35)',
                 transition: 'all 0.2s ease'
               }}
             >
               {isLoading ? (
-                <span>Signing in...</span>
+                <span>Authenticating...</span>
               ) : (
                 <>
-                  <span>Sign in as {selectedRole}</span>
+                  <span>Sign In</span>
                   <ArrowRight size={18} />
                 </>
               )}
             </button>
           </form>
 
-          {/* Links matching screenshot */}
-          <div style={{ marginTop: '24px', textAlign: 'center', display: 'flex', flexDirection: 'column', gap: '8px' }}>
-            <button
-              type="button"
-              onClick={() => setShowForgotModal(true)}
-              style={{ fontSize: '0.85rem', fontWeight: 600, color: '#0891b2', background: 'none', border: 'none', cursor: 'pointer' }}
-            >
-              Don't have an account? Create one
-            </button>
-            <span style={{ fontSize: '0.78rem', color: '#94a3b8' }}>
-              Sign in with your registered account
-            </span>
-          </div>
-
         </div>
       </div>
+
+      {/* =========================================================================
+          FIRST LOGIN FORCED PASSWORD CHANGE MODAL
+          ========================================================================= */}
+      {showForceChangeModal && (
+        <div className="modal-overlay" style={{
+          position: 'fixed',
+          inset: 0,
+          backgroundColor: 'rgba(15, 23, 42, 0.75)',
+          backdropFilter: 'blur(6px)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 999999,
+          padding: '20px'
+        }}>
+          <div style={{
+            maxWidth: '520px',
+            width: '100%',
+            backgroundColor: '#ffffff',
+            borderRadius: '20px',
+            padding: '32px',
+            boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)',
+            position: 'relative'
+          }}>
+            {/* Modal Header */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '14px', marginBottom: '18px' }}>
+              <div style={{
+                width: '46px',
+                height: '46px',
+                borderRadius: '12px',
+                backgroundColor: '#ECFEFF',
+                color: '#0E7490',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                flexShrink: 0
+              }}>
+                <KeyRound size={24} />
+              </div>
+              <div>
+                <h3 style={{ fontSize: '1.25rem', fontWeight: 800, color: '#0F172A', margin: '0 0 4px 0' }}>
+                  First Login: Change Password Required
+                </h3>
+                <p style={{ fontSize: '0.82rem', color: '#64748B', margin: 0 }}>
+                  For security, you must replace your temporary password before accessing the dashboard.
+                </p>
+              </div>
+            </div>
+
+            {changeError && (
+              <div style={{
+                padding: '10px 14px',
+                backgroundColor: '#FEF2F2',
+                border: '1px solid #FECACA',
+                borderRadius: '10px',
+                color: '#B91C1C',
+                fontSize: '0.82rem',
+                marginBottom: '16px'
+              }}>
+                {changeError}
+              </div>
+            )}
+
+            <form onSubmit={handleForcePasswordChangeSubmit}>
+              {/* Current Temporary Password */}
+              <div style={{ marginBottom: '16px' }}>
+                <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 600, color: '#334155', marginBottom: '6px' }}>
+                  Current Temporary Password
+                </label>
+                <input
+                  type="text"
+                  value={currentTempPassword}
+                  onChange={(e) => setCurrentTempPassword(e.target.value)}
+                  required
+                  style={{
+                    width: '100%',
+                    padding: '10px 14px',
+                    borderRadius: '10px',
+                    border: '1px solid #E2E8F0',
+                    fontSize: '0.88rem',
+                    backgroundColor: '#F8FAFC',
+                    color: '#334155',
+                    boxSizing: 'border-box'
+                  }}
+                />
+              </div>
+
+              {/* New Password */}
+              <div style={{ marginBottom: '16px' }}>
+                <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 600, color: '#334155', marginBottom: '6px' }}>
+                  New Permanent Password
+                </label>
+                <div style={{ position: 'relative' }}>
+                  <input
+                    type={showNewPassword ? 'text' : 'password'}
+                    value={newPassword}
+                    onChange={(e) => setNewPassword(e.target.value)}
+                    required
+                    placeholder="Enter new strong password"
+                    style={{
+                      width: '100%',
+                      padding: '10px 38px 10px 14px',
+                      borderRadius: '10px',
+                      border: '1px solid #E2E8F0',
+                      fontSize: '0.88rem',
+                      boxSizing: 'border-box'
+                    }}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowNewPassword(!showNewPassword)}
+                    style={{ position: 'absolute', right: '10px', top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', color: '#94A3B8', cursor: 'pointer' }}
+                  >
+                    {showNewPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                  </button>
+                </div>
+              </div>
+
+              {/* Confirm New Password */}
+              <div style={{ marginBottom: '18px' }}>
+                <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 600, color: '#334155', marginBottom: '6px' }}>
+                  Confirm New Password
+                </label>
+                <div style={{ position: 'relative' }}>
+                  <input
+                    type={showConfirmPassword ? 'text' : 'password'}
+                    value={confirmPassword}
+                    onChange={(e) => setConfirmPassword(e.target.value)}
+                    required
+                    placeholder="Confirm your new password"
+                    style={{
+                      width: '100%',
+                      padding: '10px 38px 10px 14px',
+                      borderRadius: '10px',
+                      border: '1px solid #E2E8F0',
+                      fontSize: '0.88rem',
+                      boxSizing: 'border-box'
+                    }}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                    style={{ position: 'absolute', right: '10px', top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', color: '#94A3B8', cursor: 'pointer' }}
+                  >
+                    {showConfirmPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                  </button>
+                </div>
+              </div>
+
+              {/* Password Requirement Checklist */}
+              <div style={{
+                backgroundColor: '#F8FAFC',
+                borderRadius: '12px',
+                padding: '14px',
+                marginBottom: '20px',
+                fontSize: '0.78rem'
+              }}>
+                <div style={{ fontWeight: 700, color: '#475569', marginBottom: '8px' }}>
+                  Password Complexity Standards:
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: passwordChecks.minLength ? '#16A34A' : '#94A3B8' }}>
+                    <Check size={13} strokeWidth={3} /> Minimum 10 characters
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: passwordChecks.hasUppercase ? '#16A34A' : '#94A3B8' }}>
+                    <Check size={13} strokeWidth={3} /> At least 1 uppercase (A-Z)
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: passwordChecks.hasLowercase ? '#16A34A' : '#94A3B8' }}>
+                    <Check size={13} strokeWidth={3} /> At least 1 lowercase (a-z)
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: passwordChecks.hasNumber ? '#16A34A' : '#94A3B8' }}>
+                    <Check size={13} strokeWidth={3} /> At least 1 number (0-9)
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: passwordChecks.hasSpecialChar ? '#16A34A' : '#94A3B8' }}>
+                    <Check size={13} strokeWidth={3} /> Special character (@, #, $)
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: passwordChecks.matchesConfirm ? '#16A34A' : '#94A3B8' }}>
+                    <Check size={13} strokeWidth={3} /> Passwords match
+                  </div>
+                </div>
+              </div>
+
+              {/* Action Buttons */}
+              <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
+                <button
+                  type="button"
+                  onClick={() => setShowForceChangeModal(false)}
+                  className="btn btn-secondary"
+                  style={{ padding: '10px 18px', fontSize: '0.85rem' }}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={!isNewPasswordCompliant || isChangingPassword}
+                  className="btn btn-primary"
+                  style={{
+                    padding: '10px 22px',
+                    fontSize: '0.85rem',
+                    backgroundColor: isNewPasswordCompliant ? '#0E7490' : '#94A3B8',
+                    borderColor: isNewPasswordCompliant ? '#0E7490' : '#94A3B8',
+                    cursor: isNewPasswordCompliant ? 'pointer' : 'not-allowed'
+                  }}
+                >
+                  {isChangingPassword ? 'Updating Password...' : 'Save Password & Enter Dashboard'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
 
       {/* Forgot Password Modal */}
       {showForgotModal && (

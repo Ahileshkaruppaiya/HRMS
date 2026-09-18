@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { X, Check } from 'lucide-react';
 import { useHRMS } from '../../context/HRMSContext';
 
@@ -33,16 +33,28 @@ export const FilterReportsModal: React.FC<FilterReportsModalProps> = ({
   onApply,
   onReset
 }) => {
-  const { branches } = useHRMS();
+  const { branches, shifts } = useHRMS();
   const [activeTab, setActiveTab] = useState<FilterTab>('branch_dept');
   const [localFilters, setLocalFilters] = useState<FilterReportsState>(currentFilters);
 
-  // Sync state when modal opens
+  // Dynamic Shift Options sourced directly from Company Shifts in HRMSContext
+  const shiftOptions = useMemo(() => {
+    if (shifts && shifts.length > 0) {
+      return shifts.map(s => s.shiftName);
+    }
+    return [];
+  }, [shifts]);
+
+  // Sync state when modal opens, preserving only valid shifts for this company
   useEffect(() => {
     if (isOpen) {
-      setLocalFilters(currentFilters);
+      const validShifts = (currentFilters.shifts || []).filter(s => shiftOptions.includes(s));
+      setLocalFilters({
+        ...currentFilters,
+        shifts: validShifts
+      });
     }
-  }, [isOpen, currentFilters]);
+  }, [isOpen, currentFilters, shiftOptions]);
 
   if (!isOpen) return null;
 
@@ -52,20 +64,10 @@ export const FilterReportsModal: React.FC<FilterReportsModalProps> = ({
     return acc;
   }, {} as { [branch: string]: string[] });
 
-  const shiftOptions = [
-    'General Shift (09:00 - 18:00)',
-    'Morning Shift (06:00 - 15:00)',
-    'Evening Shift (14:00 - 23:00)',
-    'Night Shift (21:00 - 06:00)',
-    'Rotational Shift'
-  ];
-
   const employmentTypeOptions = [
     'Full-Time',
-    'Part-Time',
-    'Contract',
     'Intern',
-    'Probation'
+    'Provisional'
   ];
 
   const modeOfWorkOptions = [
@@ -294,41 +296,47 @@ export const FilterReportsModal: React.FC<FilterReportsModalProps> = ({
             {/* TAB 2: Shift */}
             {activeTab === 'shift' && (
               <div className="filter-items-list" style={{ gap: '10px' }}>
-                {shiftOptions.map((shift) => {
-                  const isChecked = localFilters.shifts.includes(shift);
-                  return (
-                    <div 
-                      key={shift}
-                      onClick={() => toggleArrayItem('shifts', shift)}
-                      style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '12px',
-                        padding: '4px 0',
-                        cursor: 'pointer',
-                        userSelect: 'none'
-                      }}
-                    >
-                      <div style={{
-                        width: '18px',
-                        height: '18px',
-                        borderRadius: '3px',
-                        border: isChecked ? '1.5px solid #0E7490' : '1.5px solid #64748b',
-                        backgroundColor: isChecked ? '#0E7490' : '#ffffff',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        flexShrink: 0,
-                        transition: 'all 0.15s ease'
-                      }}>
-                        {isChecked && <Check size={13} color="#ffffff" strokeWidth={3} />}
+                {shiftOptions.length === 0 ? (
+                  <div style={{ padding: '24px 12px', textAlign: 'center', color: '#64748b', fontSize: '0.88rem' }}>
+                    No shifts configured for this company. Please configure shifts in Shift Management.
+                  </div>
+                ) : (
+                  shiftOptions.map((shift) => {
+                    const isChecked = localFilters.shifts.includes(shift);
+                    return (
+                      <div 
+                        key={shift}
+                        onClick={() => toggleArrayItem('shifts', shift)}
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '12px',
+                          padding: '4px 0',
+                          cursor: 'pointer',
+                          userSelect: 'none'
+                        }}
+                      >
+                        <div style={{
+                          width: '18px',
+                          height: '18px',
+                          borderRadius: '3px',
+                          border: isChecked ? '1.5px solid #0E7490' : '1.5px solid #64748b',
+                          backgroundColor: isChecked ? '#0E7490' : '#ffffff',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          flexShrink: 0,
+                          transition: 'all 0.15s ease'
+                        }}>
+                          {isChecked && <Check size={13} color="#ffffff" strokeWidth={3} />}
+                        </div>
+                        <span style={{ fontSize: '0.94rem', color: isChecked ? '#0f172a' : '#334155', fontWeight: isChecked ? 600 : 400 }}>
+                          {shift}
+                        </span>
                       </div>
-                      <span style={{ fontSize: '0.94rem', color: isChecked ? '#0f172a' : '#334155', fontWeight: isChecked ? 600 : 400 }}>
-                        {shift}
-                      </span>
-                    </div>
-                  );
-                })}
+                    );
+                  })
+                )}
               </div>
             )}
 

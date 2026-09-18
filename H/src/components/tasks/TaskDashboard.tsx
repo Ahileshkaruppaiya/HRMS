@@ -17,6 +17,7 @@ import {
 } from 'lucide-react';
 import { computeDueStatus, calculateEmployeeTaskMetrics } from '../../types/tasks';
 import { TaskFilterModal, TaskFiltersState, initialTaskFiltersState } from './TaskFilterModal';
+import { formatDateDDMMYYYY } from '../../utils/dateUtils';
 
 interface TaskDashboardProps {
   onNavigateTab: (tab: string) => void;
@@ -431,7 +432,7 @@ export const TaskDashboard: React.FC<TaskDashboardProps> = ({ onNavigateTab, onS
                     style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#fff', padding: '6px 10px', borderRadius: '6px', fontSize: '0.75rem', cursor: 'pointer' }}
                   >
                     <span style={{ fontWeight: 600, color: '#1e293b' }}>{task.taskNumber}: {task.title.slice(0, 32)}...</span>
-                    <span style={{ color: '#dc2626', fontWeight: 700 }}>Due: {task.dueDate}</span>
+                    <span style={{ color: '#dc2626', fontWeight: 700 }}>Due: {formatDateDDMMYYYY(task.dueDate)}</span>
                   </div>
                 ))}
               </div>

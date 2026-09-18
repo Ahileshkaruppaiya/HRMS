@@ -23,6 +23,7 @@ import {
 } from 'lucide-react';
 import { AttendanceRecord } from '../../types/hrms';
 import { useHRMS } from '../../context/HRMSContext';
+import { formatDateDDMMYYYY } from '../../utils/dateUtils';
 import {
   formatHoursAndMinutes,
   resolveEmployeeOtEligibility,
@@ -77,8 +78,8 @@ export const AttendanceDetailsDrawer: React.FC<AttendanceDetailsDrawerProps> = (
   // Find assigned shift or fallback
   const assignedShift = shifts.find(s => s.assignments?.some(a => a.employeeId === record.employeeId));
   const shiftModel: ShiftModel = {
-    id: assignedShift?.id || 'SH-01',
-    shiftName: record.shiftName || assignedShift?.shiftName || 'General Shift',
+    id: assignedShift?.id || shifts[0]?.id || 'SH-01',
+    shiftName: record.shiftName || assignedShift?.shiftName || shifts[0]?.shiftName || 'Shift 1 (09:00 AM - 06:00 PM)',
     shiftCode: (assignedShift as any)?.shiftCode || 'GEN-01',
     startTime: assignedShift?.startTime || '09:00 AM',
     endTime: assignedShift?.endTime || '06:00 PM',
@@ -191,7 +192,7 @@ export const AttendanceDetailsDrawer: React.FC<AttendanceDetailsDrawerProps> = (
                   <span>•</span>
                   <span>Role: <strong className="text-slate-700">{employee?.designation || 'Specialist'}</strong></span>
                   <span>•</span>
-                  <span className="text-cyan-800 font-semibold">{record.date}</span>
+                  <span className="text-cyan-800 font-semibold">{formatDateDDMMYYYY(record.date)}</span>
                 </div>
               </div>
             </div>

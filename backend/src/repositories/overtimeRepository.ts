@@ -14,21 +14,7 @@ export interface OvertimeModel {
   createdAt: string;
 }
 
-const inMemoryOvertime: OvertimeModel[] = [
-  {
-    id: 'ot-001',
-    employeeId: 'EMP-001',
-    date: '2026-08-15',
-    hours: 10,
-    hourlyRate: 100,
-    amount: 1000,
-    status: 'APPROVED',
-    reason: 'Independence Day emergency site inspection',
-    approvedBy: 'HR Manager',
-    approvedAt: '2026-08-16T10:00:00Z',
-    createdAt: '2026-08-15T19:00:00Z',
-  },
-];
+const inMemoryOvertime: OvertimeModel[] = [];
 
 export class OvertimeRepository {
   async getApprovedOvertimeForMonth(employeeId: string, _month: number, _year: number): Promise<OvertimeModel[]> {

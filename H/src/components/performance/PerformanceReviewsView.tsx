@@ -5,6 +5,7 @@ import {
   ReviewCycleType
 } from '../../types/performance';
 import { INITIAL_REVIEWS } from '../../data/performanceInitialData';
+import { formatDateDDMMYYYY } from '../../utils/dateUtils';
 import {
   Award,
   Star,
@@ -412,7 +413,7 @@ export const PerformanceReviewsView: React.FC<PerformanceReviewsViewProps> = ({
                   {selectedReview.employeeName} — {selectedReview.reviewPeriodLabel}
                 </h2>
                 <span style={{ fontSize: '12px', color: '#64748B' }}>
-                  {selectedReview.designation} • {selectedReview.department} • Reviewed by {selectedReview.reviewerName} on {selectedReview.reviewDate}
+                  {selectedReview.designation} • {selectedReview.department} • Reviewed by {selectedReview.reviewerName} on {formatDateDDMMYYYY(selectedReview.reviewDate)}
                 </span>
               </div>
               <button

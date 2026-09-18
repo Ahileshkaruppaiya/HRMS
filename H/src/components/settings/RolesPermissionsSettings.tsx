@@ -44,7 +44,7 @@ export const RolesPermissionsSettings: React.FC = () => {
     { id: 'shifts', label: 'Shift Rostering' },
     { id: 'overtime', label: 'Overtime Management & Approvals' },
     { id: 'payroll', label: 'Payroll & Salary Slips' },
-    { id: 'advance_salary', label: 'Advance Salary & Loans' },
+    { id: 'advance_salary', label: 'Advance Salary Management' },
     { id: 'finance', label: 'Finance & Expense Claims' },
     { id: 'recruitment', label: 'Recruitment & Job Openings' },
     { id: 'performance', label: 'Performance & Appraisals' },

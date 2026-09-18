@@ -50,6 +50,8 @@ import { ManualOtEntryModal } from './ManualOtEntryModal';
 import { AttendanceRequestsHub } from './AttendanceRequestsHub';
 import { AttendanceTimePickerModal } from './AttendanceTimePickerModal';
 import { ManualAttendanceEntryModal } from './ManualAttendanceEntryModal';
+import { ExportDropdown } from '../common/ExportDropdown';
+import { downloadCSV, downloadExcel, downloadPDF } from '../../utils/exportUtils';
 
 export const AttendanceManagementModule: React.FC = () => {
   const {
@@ -64,7 +66,8 @@ export const AttendanceManagementModule: React.FC = () => {
     attendanceGlobalSettings,
     updateAttendanceGlobalSettings,
     correctAttendanceRecord,
-    addNotification
+    addNotification,
+    shifts
   } = useHRMS();
 
   // Master Navigation Tabs
@@ -73,8 +76,8 @@ export const AttendanceManagementModule: React.FC = () => {
   // Register Sub-view toggle (cards is daily staff attendance register from Screenshot 3)
   const [registerViewMode, setRegisterViewMode] = useState<'cards' | 'table' | 'calendar'>('cards');
 
-  // Staff Filter for Daily Register (defaults to JAYASURYA V from Screenshot 1 & 3)
-  const [selectedStaffFilter, setSelectedStaffFilter] = useState<string>('EMP-050');
+  // Staff Filter for Daily Register
+  const [selectedStaffFilter, setSelectedStaffFilter] = useState<string>('ALL');
 
   // Interactive Note & Fine Modals
   const [noteModalRecord, setNoteModalRecord] = useState<AttendanceRecord | null>(null);
@@ -190,164 +193,13 @@ export const AttendanceManagementModule: React.FC = () => {
   const endIndex = Math.min(startIndex + pageSize, filteredRecords.length);
   const paginatedRecords = filteredRecords.slice(startIndex, endIndex);
 
-  // Staff Daily Records for Screenshot 3 view
+  // Staff Daily Records for register view
   const staffDailyRecords = useMemo(() => {
-    if (selectedStaffFilter === 'EMP-050') {
-      const recordsForEmp = attendanceRecords.filter(r => r.employeeId === 'EMP-050');
-      const baseDays: AttendanceRecord[] = [
-        {
-          id: 'ATT-201',
-          employeeId: 'EMP-050',
-          employeeName: 'JAYASURYA V',
-          department: 'Engineering',
-          date: '2026-09-08',
-          checkIn: '09:59 AM',
-          checkOut: '06:35 PM',
-          workingHours: 8.6,
-          otHours: 0.58,
-          status: 'Present',
-          lateStatus: 'On Time',
-          faceVerified: true,
-          method: 'Face Recognition'
-        },
-        {
-          id: 'ATT-202',
-          employeeId: 'EMP-050',
-          employeeName: 'JAYASURYA V',
-          department: 'Engineering',
-          date: '2026-09-07',
-          checkIn: '09:48 AM',
-          checkOut: '06:47 PM',
-          workingHours: 8.98,
-          otHours: 0.98,
-          status: 'Present',
-          lateStatus: 'On Time',
-          faceVerified: true,
-          method: 'Face Recognition'
-        },
-        {
-          id: 'ATT-205',
-          employeeId: 'EMP-050',
-          employeeName: 'JAYASURYA V',
-          department: 'Engineering',
-          date: '2026-09-06',
-          checkIn: null,
-          checkOut: null,
-          workingHours: 0,
-          status: 'Week Off',
-          lateStatus: 'N/A',
-          faceVerified: false,
-          method: 'System Auto'
-        },
-        {
-          id: 'ATT-206',
-          employeeId: 'EMP-050',
-          employeeName: 'JAYASURYA V',
-          department: 'Engineering',
-          date: '2026-09-05',
-          checkIn: '09:55 AM',
-          checkOut: '06:30 PM',
-          workingHours: 8.58,
-          status: 'Present',
-          lateStatus: 'On Time',
-          faceVerified: true,
-          method: 'Face Recognition'
-        },
-        {
-          id: 'ATT-207',
-          employeeId: 'EMP-050',
-          employeeName: 'JAYASURYA V',
-          department: 'Engineering',
-          date: '2026-09-04',
-          checkIn: '09:50 AM',
-          checkOut: '02:20 PM',
-          workingHours: 4.5,
-          status: 'Half Day',
-          lateStatus: 'On Time',
-          faceVerified: true,
-          method: 'Face Recognition'
-        },
-        {
-          id: 'ATT-208',
-          employeeId: 'EMP-050',
-          employeeName: 'JAYASURYA V',
-          department: 'Engineering',
-          date: '2026-09-03',
-          checkIn: '09:50 AM',
-          checkOut: '06:20 PM',
-          workingHours: 8.5,
-          status: 'Present',
-          lateStatus: 'On Time',
-          faceVerified: true,
-          method: 'Face Recognition'
-        },
-        {
-          id: 'ATT-209',
-          employeeId: 'EMP-050',
-          employeeName: 'JAYASURYA V',
-          department: 'Engineering',
-          date: '2026-09-02',
-          checkIn: '09:45 AM',
-          checkOut: '06:25 PM',
-          workingHours: 8.67,
-          status: 'Present',
-          lateStatus: 'On Time',
-          faceVerified: true,
-          method: 'Face Recognition'
-        }
-      ];
-      return baseDays.map(bd => {
-        const found = recordsForEmp.find(r => r.date === bd.date);
-        return found || bd;
-      });
-    }
-
-    if (selectedStaffFilter === 'EMP-051') {
-      const recordsForEmp = attendanceRecords.filter(r => r.employeeId === 'EMP-051');
-      const baseDays: AttendanceRecord[] = [
-        {
-          id: 'ATT-203',
-          employeeId: 'EMP-051',
-          employeeName: 'PURUSHOTHAMAN M',
-          department: 'Production',
-          date: '2026-09-08',
-          checkIn: '09:30 AM',
-          checkOut: '07:15 PM',
-          workingHours: 9.75,
-          otHours: 0.75,
-          status: 'Present',
-          lateStatus: 'On Time',
-          faceVerified: true,
-          method: 'Face Recognition'
-        },
-        {
-          id: 'ATT-204',
-          employeeId: 'EMP-051',
-          employeeName: 'PURUSHOTHAMAN M',
-          department: 'Production',
-          date: '2026-09-07',
-          checkIn: '09:25 AM',
-          checkOut: '06:30 PM',
-          workingHours: 9.08,
-          status: 'Present',
-          lateStatus: 'On Time',
-          faceVerified: true,
-          method: 'Face Recognition'
-        }
-      ];
-      return baseDays.map(bd => {
-        const found = recordsForEmp.find(r => r.date === bd.date);
-        return found || bd;
-      });
-    }
-
     if (selectedStaffFilter !== 'ALL') {
-      const emps = attendanceRecords.filter(r => r.employeeId === selectedStaffFilter);
-      if (emps.length > 0) return emps;
+      return attendanceRecords.filter(r => r.employeeId === selectedStaffFilter);
     }
-
     return paginatedRecords;
-  }, [selectedStaffFilter, attendanceRecords, paginatedRecords, filteredRecords]);
+  }, [selectedStaffFilter, attendanceRecords, paginatedRecords]);
 
   // Table selection handlers
   const handleSelectAll = (checked: boolean) => {
@@ -382,28 +234,46 @@ export const AttendanceManagementModule: React.FC = () => {
     });
   };
 
-  // Export CSV
+  // Export Handlers (Excel, PDF, CSV)
+  const getAttendanceExportData = () => {
+    const columns = [
+      { key: 'employeeId', label: 'Employee ID' },
+      { key: 'employeeName', label: 'Employee Name' },
+      { key: 'department', label: 'Department' },
+      { key: 'date', label: 'Date' },
+      { key: 'status', label: 'Status' },
+      { key: 'checkIn', label: 'Check In' },
+      { key: 'checkOut', label: 'Check Out' },
+      { key: 'workingHours', label: 'Working Hours' },
+      { key: 'otHours', label: 'OT Hours' }
+    ];
+    const data = filteredRecords.map(r => ({
+      employeeId: r.employeeId,
+      employeeName: r.employeeName,
+      department: r.department || '',
+      date: r.date,
+      status: r.status,
+      checkIn: r.checkIn || '-',
+      checkOut: r.checkOut || '-',
+      workingHours: r.workingHours || '-',
+      otHours: r.approvedOtHours || r.otHours || 0
+    }));
+    return { columns, data };
+  };
+
   const handleExportCsv = () => {
-    const headers = ['Employee ID', 'Name', 'Department', 'Date', 'Status', 'Check In', 'Check Out', 'Working Hours', 'OT Hours'];
-    const rows = filteredRecords.map(r => [
-      r.employeeId,
-      `"${r.employeeName}"`,
-      `"${r.department || ''}"`,
-      r.date,
-      r.status,
-      r.checkIn || '',
-      r.checkOut || '',
-      r.workingHours,
-      r.approvedOtHours || r.otHours || 0
-    ]);
-    const csvContent = 'data:text/csv;charset=utf-8,' + [headers.join(','), ...rows.map(e => e.join(','))].join('\n');
-    const encodedUri = encodeURI(csvContent);
-    const link = document.createElement('a');
-    link.setAttribute('href', encodedUri);
-    link.setAttribute('download', `Attendance_Report_${new Date().toISOString().split('T')[0]}.csv`);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+    const { columns, data } = getAttendanceExportData();
+    downloadCSV(data, `Attendance_Report_${new Date().toISOString().split('T')[0]}`, columns);
+  };
+
+  const handleExportExcel = () => {
+    const { columns, data } = getAttendanceExportData();
+    downloadExcel(data, `Attendance_Report_${new Date().toISOString().split('T')[0]}`, columns);
+  };
+
+  const handleExportPDF = () => {
+    const { columns, data } = getAttendanceExportData();
+    downloadPDF(data, 'Daily Attendance & Timesheet Register', `Attendance_Report_${new Date().toISOString().split('T')[0]}`, columns);
   };
 
   const getStatusBadgeClass = (status: AttendanceRecord['status']) => {
@@ -446,23 +316,11 @@ export const AttendanceManagementModule: React.FC = () => {
         </div>
 
         <div className="vrm-hub-header-right" style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-          <button
-            type="button"
-            className="vrm-btn vrm-btn-secondary"
-            onClick={handleExportCsv}
-            style={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: '6px',
-              padding: '8px 14px',
-              borderRadius: '10px',
-              fontSize: '0.84rem',
-              fontWeight: 600
-            }}
-          >
-            <Download size={15} />
-            <span>Export CSV</span>
-          </button>
+          <ExportDropdown 
+            onExportExcel={handleExportExcel}
+            onExportPDF={handleExportPDF}
+            onExportCSV={handleExportCsv}
+          />
 
           {isHrOrCeo && (
             <button
@@ -742,10 +600,12 @@ export const AttendanceManagementModule: React.FC = () => {
                 className="vrm-filter-select"
                 style={{ fontWeight: 700, minWidth: '220px', border: '1.5px solid #0E7490' }}
               >
-                <option value="EMP-050">JAYASURYA V (Site Engineer)</option>
-                <option value="EMP-051">PURUSHOTHAMAN M (Fabrication)</option>
-                <option value="EMP-001">Pavithra (HR Manager)</option>
                 <option value="ALL">All Staff (Combined Logs)</option>
+                {employees.map(emp => (
+                  <option key={emp.employeeId || emp.id} value={emp.employeeId || emp.id}>
+                    {emp.firstName} {emp.lastName} ({emp.designation})
+                  </option>
+                ))}
               </select>
             </div>
 
@@ -917,7 +777,7 @@ export const AttendanceManagementModule: React.FC = () => {
 
                             {/* Shift */}
                             <td style={{ color: '#64748B' }}>
-                              {rec.shiftName || 'General (09:00 - 18:00)'}
+                              {rec.shiftName || shifts[0]?.shiftName || 'Shift 1 (09:00 AM - 06:00 PM)'}
                             </td>
 
                             {/* Check In */}
@@ -1753,7 +1613,7 @@ export const AttendanceManagementModule: React.FC = () => {
               Add Attendance Note
             </h3>
             <p style={{ fontSize: '0.85rem', color: '#64748B', margin: '0 0 16px 0' }}>
-              {noteModalRecord.employeeName} | {noteModalRecord.date}
+              {noteModalRecord.employeeName} | {formatDateDDMMYYYY(noteModalRecord.date)}
             </p>
 
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginBottom: '14px' }}>
@@ -1881,7 +1741,7 @@ export const AttendanceManagementModule: React.FC = () => {
               Late Arrival & Fine Penalty
             </h3>
             <p style={{ fontSize: '0.85rem', color: '#64748B', margin: '0 0 16px 0' }}>
-              {fineModalRecord.employeeName} | {fineModalRecord.date}
+              {fineModalRecord.employeeName} | {formatDateDDMMYYYY(fineModalRecord.date)}
             </p>
 
             <div style={{ marginBottom: '14px' }}>

@@ -34,7 +34,7 @@ import { downloadCSV, downloadExcel, downloadPDF } from '../../utils/exportUtils
 import { downloadPagarBookMusterRollExcel } from '../../utils/pagarBookMusterRollExporter';
 
 // Attendance Short Code System
-export type AttendanceStatusCode = 'P' | 'A' | 'L' | 'WO' | 'H' | 'HD' | 'OD' | 'WFH' | 'CO' | 'ML';
+export type AttendanceStatusCode = 'P' | 'A' | 'L' | 'WO' | 'H' | 'HD' | 'OD' | 'WFH' | 'ML';
 
 export interface StatusConfig {
   code: AttendanceStatusCode;
@@ -54,7 +54,6 @@ export const ATTENDANCE_STATUS_CONFIG: Record<AttendanceStatusCode, StatusConfig
   HD: { code: 'HD', label: 'Half Day', badgeBg: '#FFEDD5', badgeColor: '#C2410C', borderColor: '#FDBA74', weight: 0.5 },
   OD: { code: 'OD', label: 'On Duty', badgeBg: '#CFFAFE', badgeColor: '#0E7490', borderColor: '#67E8F9', weight: 1.0 },
   WFH: { code: 'WFH', label: 'Work From Home', badgeBg: '#E0E7FF', badgeColor: '#4338CA', borderColor: '#A5B4FC', weight: 1.0 },
-  CO: { code: 'CO', label: 'Comp Off', badgeBg: '#FFE4E6', badgeColor: '#BE123C', borderColor: '#FDA4AF', weight: 0.0 },
   ML: { code: 'ML', label: 'Missing / Unmarked', badgeBg: '#FEF3C7', badgeColor: '#B45309', borderColor: '#FDE68A', weight: 0.0 }
 };
 
@@ -83,7 +82,7 @@ export const MusterRollModule: React.FC<MusterRollModuleProps> = ({
   fromDateProp,
   toDateProp
 }) => {
-  const { employees, attendanceRecords, leaveRequests, currentUser } = useHRMS();
+  const { employees, attendanceRecords, leaveRequests, currentUser, shifts } = useHRMS();
 
   // ---------------------------------------------------------------------------
   // 1. FILTER STATES (Default: Current Month & Year)
@@ -215,7 +214,7 @@ export const MusterRollModule: React.FC<MusterRollModuleProps> = ({
         checkIn: edit.checkIn,
         checkOut: edit.checkOut,
         workingHours: edit.status === 'P' || edit.status === 'OD' || edit.status === 'WFH' ? '08:45' : edit.status === 'HD' ? '04:15' : '00:00',
-        shift: employee.workShift || 'General (09:00 - 18:00)',
+        shift: employee.workShift || shifts[0]?.shiftName || 'Shift 1 (09:00 AM - 06:00 PM)',
         location: employee.address || 'Corporate HQ',
         remarks: edit.remarks || 'Manually updated'
       };
@@ -229,12 +228,24 @@ export const MusterRollModule: React.FC<MusterRollModuleProps> = ({
       dayItem.dateStr <= l.endDate
     );
     if (leaveRec) {
+      const isWfh = leaveRec.leaveType.toLowerCase().includes('work from home') || leaveRec.leaveType.toLowerCase() === 'wfh';
+      if (isWfh) {
+        return {
+          status: 'WFH' as AttendanceStatusCode,
+          checkIn: '09:00 AM',
+          checkOut: '06:00 PM',
+          workingHours: '08:30',
+          shift: employee.workShift || shifts[0]?.shiftName || 'Shift 1 (09:00 AM - 06:00 PM)',
+          location: 'Work From Home (Approved)',
+          remarks: `WFH: ${leaveRec.reason || 'Approved Work From Home'}`
+        };
+      }
       return {
         status: 'L' as AttendanceStatusCode,
         checkIn: '-',
         checkOut: '-',
         workingHours: '00:00',
-        shift: employee.workShift || 'General (09:00 - 18:00)',
+        shift: employee.workShift || shifts[0]?.shiftName || 'Shift 1 (09:00 AM - 06:00 PM)',
         location: 'On Leave',
         remarks: `${leaveRec.leaveType}: ${leaveRec.reason || 'Approved Leave'}`
       };
@@ -266,8 +277,12 @@ export const MusterRollModule: React.FC<MusterRollModuleProps> = ({
       };
     }
 
-    // Check Attendance Records Database
-    const attRec = attendanceRecords.find(r => r.employeeId === employee.employeeId && r.date === dayItem.dateStr);
+    // Check Attendance Records
+    const attRec = attendanceRecords.find(a => 
+      a.employeeId === employee.employeeId && 
+      a.date === dayItem.dateStr
+    );
+
     if (attRec) {
       let code: AttendanceStatusCode = 'P';
       if (attRec.status === 'Absent') code = 'A';
@@ -281,35 +296,21 @@ export const MusterRollModule: React.FC<MusterRollModuleProps> = ({
         checkIn: attRec.checkIn || '09:05 AM',
         checkOut: attRec.checkOut || '06:10 PM',
         workingHours: attRec.workingHours ? `${Math.floor(attRec.workingHours)}h ${Math.round((attRec.workingHours % 1) * 60)}m` : '08:30',
-        shift: employee.workShift || 'General (09:00 - 18:00)',
+        shift: employee.workShift || shifts[0]?.shiftName || 'Shift 1 (09:00 AM - 06:00 PM)',
         location: attRec.location?.address || employee.address || 'Main Campus',
         remarks: attRec.status === 'Late' ? 'Late Check-in logged' : 'Regular Attendance'
       };
     }
 
-    // Deterministic mock pattern based on employee ID hash & day number to ensure realistic testing data
-    const charCodeSum = (employee.employeeId || '0').split('').reduce((acc, c) => acc + c.charCodeAt(0), 0);
-    const patternVal = (charCodeSum + dayItem.dayNum) % 17;
-
-    if (patternVal === 0) {
-      return { status: 'A' as AttendanceStatusCode, checkIn: '-', checkOut: '-', workingHours: '00:00', shift: employee.workShift || 'General', location: 'N/A', remarks: 'Uninformed Absence' };
-    } else if (patternVal === 3) {
-      return { status: 'HD' as AttendanceStatusCode, checkIn: '09:10 AM', checkOut: '01:30 PM', workingHours: '04:20', shift: employee.workShift || 'General', location: 'Main Office', remarks: 'Half day leave approved' };
-    } else if (patternVal === 7) {
-      return { status: 'WFH' as AttendanceStatusCode, checkIn: '08:55 AM', checkOut: '06:05 PM', workingHours: '09:10', shift: employee.workShift || 'General', location: 'Remote Location', remarks: 'Pre-approved WFH' };
-    } else if (patternVal === 11) {
-      return { status: 'OD' as AttendanceStatusCode, checkIn: '09:30 AM', checkOut: '05:45 PM', workingHours: '08:15', shift: employee.workShift || 'General', location: 'Client Site Visit', remarks: 'On Duty Assignment' };
-    }
-
-    // Default Present
+    // Unmarked / No attendance record found in database
     return {
-      status: 'P' as AttendanceStatusCode,
-      checkIn: '09:02 AM',
-      checkOut: '06:08 PM',
-      workingHours: '08:45',
-      shift: employee.workShift || 'General (09:00 - 18:00)',
+      status: 'ML' as AttendanceStatusCode,
+      checkIn: '-',
+      checkOut: '-',
+      workingHours: '00:00',
+      shift: employee.workShift || shifts[0]?.shiftName || 'Shift 1 (09:00 AM - 06:00 PM)',
       location: employee.address || 'Corporate HQ',
-      remarks: 'Normal Punch'
+      remarks: 'No punch recorded'
     };
   };
 
@@ -544,7 +545,7 @@ export const MusterRollModule: React.FC<MusterRollModuleProps> = ({
   };
 
   return (
-    <div style={{ backgroundColor: '#F7F9FC', minHeight: '100vh', padding: '24px 32px' }} className="muster-roll-wrapper">
+    <div style={{ backgroundColor: 'transparent', minHeight: 'auto', padding: 0 }} className="muster-roll-wrapper">
       
       {/* Printable CSS Header Override */}
       <style>{`
@@ -570,56 +571,48 @@ export const MusterRollModule: React.FC<MusterRollModuleProps> = ({
       <div className="muster-roll-printable-area">
         
 
-
-
-
         {/* =========================================================================
-            4. ATTENDANCE LEGEND CHIPS BAR
-            ========================================================================= */}
-        <div className="no-print" style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: '8px',
-          flexWrap: 'wrap',
-          marginBottom: '18px',
-          padding: '10px 16px',
-          backgroundColor: '#FFFFFF',
-          borderRadius: '10px',
-          border: '1px solid #E2E8F0'
-        }}>
-          {Object.values(ATTENDANCE_STATUS_CONFIG).map(cfg => (
-            <span
-              key={cfg.code}
-              style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: '4px',
-                padding: '3px 8px',
-                borderRadius: '6px',
-                backgroundColor: cfg.badgeBg,
-                color: cfg.badgeColor,
-                border: `1px solid ${cfg.borderColor}`,
-                fontSize: '0.72rem',
-                fontWeight: 800
-              }}
-            >
-              <strong style={{ minWidth: '18px', textAlign: 'center' }}>{cfg.code}</strong>
-              <span>- {cfg.label}</span>
-            </span>
-          ))}
-        </div>
-
-        {/* =========================================================================
-            5. MUSTER ROLL ATTENDANCE MATRIX TABLE (WITH STICKY COLUMNS)
+            UNIFIED MUSTER ROLL CARD (LEGEND + TABLE)
             ========================================================================= */}
         <div style={{
           backgroundColor: '#FFFFFF',
-          borderRadius: '16px',
+          borderRadius: '10px',
           border: '1px solid #E2E8F0',
-          boxShadow: '0 4px 16px rgba(0, 0, 0, 0.03)',
+          boxShadow: '0 1px 3px rgba(0, 0, 0, 0.03)',
           overflow: 'hidden',
           marginBottom: '20px'
         }}>
+          {/* Top Integrated Legend Chips Bar */}
+          <div className="no-print" style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px',
+            flexWrap: 'wrap',
+            padding: '12px 16px',
+            backgroundColor: '#FFFFFF',
+            borderBottom: '1px solid #E2E8F0'
+          }}>
+            {Object.values(ATTENDANCE_STATUS_CONFIG).map(cfg => (
+              <span
+                key={cfg.code}
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '4px',
+                  padding: '3px 8px',
+                  borderRadius: '6px',
+                  backgroundColor: cfg.badgeBg,
+                  color: cfg.badgeColor,
+                  border: `1px solid ${cfg.borderColor}`,
+                  fontSize: '0.72rem',
+                  fontWeight: 800
+                }}
+              >
+                <strong style={{ minWidth: '18px', textAlign: 'center' }}>{cfg.code}</strong>
+                <span>- {cfg.label}</span>
+              </span>
+            ))}
+          </div>
           
           <div style={{ overflowX: 'auto', maxHeight: '680px' }}>
             <table style={{ width: '100%', borderCollapse: 'separate', borderSpacing: 0, fontSize: '0.8rem' }}>
@@ -976,7 +969,7 @@ export const MusterRollModule: React.FC<MusterRollModuleProps> = ({
                 </div>
                 <div style={{ backgroundColor: '#F8FAFC', padding: '12px 14px', borderRadius: '10px', border: '1px solid #E2E8F0' }}>
                   <div style={{ fontSize: '0.7rem', fontWeight: 800, color: '#64748B' }}>WORK SHIFT</div>
-                  <div style={{ fontSize: '0.88rem', fontWeight: 700, color: '#0F172A', marginTop: '2px' }}>{selectedEmpDetail.workShift || 'General (09:00 - 18:00)'}</div>
+                  <div style={{ fontSize: '0.88rem', fontWeight: 700, color: '#0F172A', marginTop: '2px' }}>{selectedEmpDetail.workShift || shifts[0]?.shiftName || 'Shift 1 (09:00 AM - 06:00 PM)'}</div>
                 </div>
                 <div style={{ backgroundColor: '#F8FAFC', padding: '12px 14px', borderRadius: '10px', border: '1px solid #E2E8F0' }}>
                   <div style={{ fontSize: '0.7rem', fontWeight: 800, color: '#64748B' }}>PRIMARY LOCATION</div>

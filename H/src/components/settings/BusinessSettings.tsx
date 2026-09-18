@@ -49,7 +49,7 @@ export const BusinessSettings: React.FC = () => {
     logoStatus: businessSettings.logoStatus || 'Added',
     policyDocumentsCount: policyDocuments.length,
     availableEntities: [
-      { id: '1', name: 'VRM Structures (Madhavaram HQ)', code: 'VRM001', isCurrent: businessSettings.activeEntity === 'VRM Structures (Madhavaram HQ)' },
+      { id: '1', name: 'Businz HQ', code: 'BSZ001', isCurrent: businessSettings.activeEntity === 'Businz HQ' || businessSettings.activeEntity === 'VRM Structures (Madhavaram HQ)' },
       { id: '2', name: 'VRM Pre-Engineered Yard (Guindy)', code: 'VRM002', isCurrent: businessSettings.activeEntity === 'VRM Pre-Engineered Yard (Guindy)' },
       { id: '3', name: 'VRM Infrastructure Projects (Sri City)', code: 'VRM003', isCurrent: businessSettings.activeEntity === 'VRM Infrastructure Projects (Sri City)' }
     ],
@@ -243,7 +243,7 @@ export const BusinessSettings: React.FC = () => {
             <Building2 size={20} />
           </div>
           <div style={{ flex: 1, minWidth: 0, overflow: 'hidden' }}>
-            <div style={labelStyle}>Business Name ({businessData.businessCode})</div>
+            <div style={labelStyle}>Software / Business Name ({businessData.businessCode})</div>
             <div style={valueStyle} title={businessData.businessName}>{businessData.businessName}</div>
           </div>
           <ChevronRight size={18} color="#94a3b8" style={{ flexShrink: 0, marginLeft: 'auto' }} />
@@ -632,7 +632,7 @@ export const BusinessSettings: React.FC = () => {
               {activeModal === 'businessName' && (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
                   <div>
-                    <label style={modalLabelStyle}>Legal Registered Business Name</label>
+                    <label style={modalLabelStyle}>Software / Business Name</label>
                     <input
                       type="text"
                       value={modalFormData.businessName}

@@ -15,6 +15,7 @@ import {
   X
 } from 'lucide-react';
 import { AttendanceCorrectionModal } from './AttendanceCorrectionModal';
+import { formatDateDDMMYYYY } from '../../utils/dateUtils';
 
 export const AttendanceCalendarView: React.FC = () => {
   const { employees, attendanceRecords, currentUser } = useHRMS();
@@ -318,7 +319,7 @@ export const AttendanceCalendarView: React.FC = () => {
           }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
               <div style={{ fontSize: '1.1rem', fontWeight: 700, color: '#1E293B' }}>
-                Attendance Detail — {selectedDayRecord.date}
+                Attendance Detail — {formatDateDDMMYYYY(selectedDayRecord.date)}
               </div>
               <button
                 onClick={() => setSelectedDayRecord(null)}

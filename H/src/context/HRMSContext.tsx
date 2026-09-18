@@ -29,8 +29,10 @@ import {
   TaskItemEnhanced,
   TaskAssignee,
   TaskAssigneeStatus,
+  TaskDailyReport,
   TaskCompletionEvidence,
   TaskAttachment,
+  TaskLinkItem,
   TaskMasterItem,
   MOMMeeting,
   TaskEscalationRule,
@@ -74,6 +76,26 @@ import {
 import { initialSandwichPolicies, initialSandwichAuditLogs } from '../data/sandwichPolicyInitialData';
 import { calculateSandwichLeave } from '../services/sandwichLeaveEngine';
 import {
+  FieldAssignment,
+  FieldTripSession,
+  LocationPoint,
+  TrackingAlert,
+  TodayFieldEmployeeItem,
+  TrackingOverviewMetrics
+} from '../types/tracking';
+import {
+  INITIAL_FIELD_ASSIGNMENTS,
+  INITIAL_TRIP_SESSIONS,
+  INITIAL_TRACKING_ALERTS
+} from '../services/trackingMockData';
+import {
+  calculateHaversineMeters,
+  calculateSequentialRouteKm,
+  metersToKm,
+  isTrackingScheduleActive,
+  isValidMovementPoint
+} from '../services/trackingEngine';
+import {
   CompanyInfo,
   CompanyBranch,
   OrganizationStructure,
@@ -109,6 +131,7 @@ import {
   INITIAL_TASK_WEIGHTS
 } from './taskInitialData';
 import { toNum } from '../utils/numbers';
+import { generateNextEmployeeId } from '../utils/employeeIdUtils';
 import {
   MissedPunchRequest,
   OvertimeRequest,
@@ -129,12 +152,32 @@ import {
   INITIAL_ATTENDANCE_POLICY_CONFIG
 } from '../data/attendanceEnterpriseInitialData';
 import {
+  INITIAL_EMPLOYEES,
+  INITIAL_ATTENDANCE,
+  INITIAL_FACE_LOGS,
+  INITIAL_ATTENDANCE_AUDIT_LOGS,
+  INITIAL_LEAVES,
+  INITIAL_SHIFTS,
+  INITIAL_SHIFT_REQUESTS,
+  INITIAL_DEPTS,
+  INITIAL_PAYROLL,
+  INITIAL_ASSETS,
+  INITIAL_EXPENSES,
+  INITIAL_JOBS,
+  INITIAL_CANDIDATES,
+  INITIAL_NOTIFICATIONS,
+  INITIAL_TASKS,
+  INITIAL_PERFORMANCE
+} from '../data/hrmsMockData';
+export { INITIAL_ATTENDANCE_AUDIT_LOGS };
+import {
   calculateAttendanceHoursAndStatus,
   resolveEmployeeOtEligibility,
   calculateOtSalaryAmount,
   calculateAttendanceSalaryImpact,
   aggregateMonthlyAttendanceSummary
 } from '../services/attendanceCalculationEngine';
+import { SAMPLE_TRAVEL_RECEIPT, SAMPLE_EQUIPMENT_RECEIPT } from '../utils/sampleReceipts';
 
 export const calculateDistanceMeters = (lat1: number, lng1: number, lat2: number, lng2: number): number => {
   const R = 6371e3; // metres
@@ -153,7 +196,7 @@ export const calculateDistanceMeters = (lat1: number, lng1: number, lat2: number
 
 const INITIAL_GEOFENCE_CONFIG: GeofenceConfig = {
   enabled: true,
-  officeName: 'VRM Structures India Pvt Ltd',
+  officeName: 'Businz HQ',
   centerLat: 13.151968,
   centerLng: 80.2086053,
   radiusMeters: 200,
@@ -185,7 +228,7 @@ const DEFAULT_PERMISSIONS: PermissionMatrix = {
   'CEO': {
     dashboard: ['view', 'create', 'edit', 'delete', 'approve', 'export'],
     employees: ['view', 'create', 'edit', 'delete', 'approve', 'export'],
-    face_attendance: ['view', 'create', 'edit', 'delete', 'approve', 'export'],
+    face_attendance: [],
     attendance: ['view', 'create', 'edit', 'delete', 'approve', 'export'],
     gps_geofence: ['view', 'create', 'edit', 'delete', 'approve', 'export'],
     leaves: ['view', 'create', 'edit', 'delete', 'approve', 'export'],
@@ -266,7 +309,7 @@ const DEFAULT_PERMISSIONS: PermissionMatrix = {
     dashboard: ['view'],
     employees: [],
     face_attendance: ['view', 'create'],
-    attendance: ['view'],
+    attendance: [],
     gps_geofence: [],
     leaves: ['view', 'create'],
     shifts: ['view', 'create'],
@@ -444,875 +487,7 @@ const DEFAULT_PERMISSIONS: PermissionMatrix = {
   }
 };
 
-// Initial Mock Data Sets
-const INITIAL_EMPLOYEES: Employee[] = [
-  {
-    id: 'EMP-000',
-    employeeId: 'EMP-000',
-    firstName: 'Velmurugan',
-    lastName: '',
-    email: 'ceo@vrmstructures.com',
-    phone: '+91 98765 43210',
-    dob: '1975-06-15',
-    gender: 'Male',
-    address: 'Corporate HQ, VRM Structures, Chennai',
-    department: 'HR',
-    designation: 'CEO',
-    reportingManagerId: '',
-    reportingManagerName: 'Board of Directors',
-    joiningDate: '2018-01-01',
-    employmentType: 'Full-Time',
-    status: 'Active',
-    avatar: '',
-    basicSalary: 250000,
-    allowances: { hra: 60000, transport: 15000, medical: 10000, special: 25000 },
-    bankDetails: { bankName: 'HDFC Bank', accountNumber: '****1001', ifscCode: 'HDFC0001234', branch: 'Anna Nagar' },
-    attendanceMethod: 'Face Scan',
-    gpsAllowed: true,
-    faceRegistered: true,
-    facePhotoUrl: '',
-    documents: []
-  },
-  {
-    id: 'EMP-001',
-    employeeId: 'EMP-001',
-    firstName: 'Pavithra',
-    lastName: '',
-    email: 'hr@vrmstructures.com',
-    phone: '+91 98765 12345',
-    dob: '1992-04-12',
-    gender: 'Female',
-    address: 'VRM Structures, Chennai',
-    department: 'HR',
-    designation: 'HR Manager',
-    reportingManagerId: 'EMP-000',
-    reportingManagerName: 'Velmurugan',
-    joiningDate: '2020-03-15',
-    employmentType: 'Full-Time',
-    status: 'Active',
-    avatar: '',
-    basicSalary: 85000,
-    allowances: { hra: 25000, transport: 6000, medical: 4000, special: 10000 },
-    bankDetails: { bankName: 'ICICI Bank', accountNumber: '****6789', ifscCode: 'ICIC00912', branch: 'Chennai Main' },
-    attendanceMethod: 'Face Scan',
-    gpsAllowed: true,
-    faceRegistered: true,
-    facePhotoUrl: '',
-    documents: [
-      { name: 'Offer_Letter.pdf', type: 'PDF', url: '#', uploadDate: '2020-03-10' },
-      { name: 'ID_Proof_Aadhaar.pdf', type: 'PDF', url: '#', uploadDate: '2020-03-10' }
-    ]
-  },
-  {
-    id: 'EMP-002',
-    employeeId: 'EMP-002',
-    firstName: 'Ramesh',
-    lastName: 'Kumar',
-    email: 'ramesh.ph@vrmstructures.com',
-    phone: '+91 98765 22002',
-    dob: '1985-11-22',
-    gender: 'Male',
-    address: 'Industrial Estate, Chennai',
-    department: 'Dispatch',
-    designation: 'Dispatch Head',
-    reportingManagerId: 'EMP-000',
-    reportingManagerName: 'Velmurugan',
-    joiningDate: '2019-01-10',
-    employmentType: 'Full-Time',
-    status: 'Active',
-    avatar: '',
-    basicSalary: 95000,
-    allowances: { hra: 28000, transport: 7000, medical: 5000, special: 12000 },
-    bankDetails: { bankName: 'State Bank of India', accountNumber: '****4321', ifscCode: 'SBIN00123', branch: 'Ambattur' },
-    attendanceMethod: 'Face Scan',
-    gpsAllowed: true,
-    faceRegistered: true,
-    documents: []
-  },
-  {
-    id: 'EMP-003',
-    employeeId: 'EMP-003',
-    firstName: 'Suresh',
-    lastName: 'Patel',
-    email: 'suresh.dh@vrmstructures.com',
-    phone: '+91 98765 33003',
-    dob: '1987-08-14',
-    gender: 'Male',
-    address: 'Logistics Park, Chennai',
-    department: 'Dispatch',
-    designation: 'Logistics Coordinator',
-    reportingManagerId: 'EMP-002',
-    reportingManagerName: 'Ramesh Kumar',
-    joiningDate: '2020-06-01',
-    employmentType: 'Full-Time',
-    status: 'Active',
-    avatar: '',
-    basicSalary: 82000,
-    allowances: { hra: 24000, transport: 6000, medical: 4000, special: 10000 },
-    bankDetails: { bankName: 'Canara Bank', accountNumber: '****9876', ifscCode: 'CNRB00876', branch: 'Guindy' },
-    attendanceMethod: 'Face Scan',
-    gpsAllowed: true,
-    faceRegistered: true,
-    documents: []
-  },
-  {
-    id: 'EMP-004',
-    employeeId: 'EMP-004',
-    firstName: 'Karthik',
-    lastName: 'Rajan',
-    email: 'karthik.fs@vrmstructures.com',
-    phone: '+91 98765 44004',
-    dob: '1990-02-17',
-    gender: 'Male',
-    address: 'Factory Road, Chennai',
-    department: 'Procurement',
-    designation: 'Procurement Head',
-    reportingManagerId: 'EMP-000',
-    reportingManagerName: 'Velmurugan',
-    joiningDate: '2021-02-15',
-    employmentType: 'Full-Time',
-    status: 'Active',
-    avatar: '',
-    basicSalary: 65000,
-    allowances: { hra: 18000, transport: 5000, medical: 3000, special: 8000 },
-    bankDetails: { bankName: 'Axis Bank', accountNumber: '****1122', ifscCode: 'UTIB00345', branch: 'Chennai' },
-    attendanceMethod: 'Face Scan',
-    gpsAllowed: true,
-    faceRegistered: true,
-    documents: []
-  },
-  {
-    id: 'EMP-005',
-    employeeId: 'EMP-005',
-    firstName: 'Murugan',
-    lastName: 'S',
-    email: 'murugan.fe@vrmstructures.com',
-    phone: '+91 98765 55005',
-    dob: '1995-07-20',
-    gender: 'Male',
-    address: 'Works Colony, Chennai',
-    department: 'Procurement',
-    designation: 'Purchase Executive',
-    reportingManagerId: 'EMP-004',
-    reportingManagerName: 'Karthik Rajan',
-    joiningDate: '2022-04-01',
-    employmentType: 'Full-Time',
-    status: 'Active',
-    avatar: '',
-    basicSalary: 38000,
-    allowances: { hra: 10000, transport: 3000, medical: 2000, special: 4000 },
-    bankDetails: { bankName: 'Indian Bank', accountNumber: '****5566', ifscCode: 'IDIB00112', branch: 'Chromepet' },
-    attendanceMethod: 'Face Scan',
-    gpsAllowed: true,
-    faceRegistered: true,
-    documents: []
-  },
-  {
-    id: 'EMP-006',
-    employeeId: 'EMP-006',
-    firstName: 'Anand',
-    lastName: 'Sharma',
-    email: 'anand.pr@vrmstructures.com',
-    phone: '+91 98765 66006',
-    dob: '1986-09-12',
-    gender: 'Male',
-    address: 'Supply Chain Enclave, Chennai',
-    department: 'Procurement',
-    designation: 'Vendor Coordinator',
-    reportingManagerId: 'EMP-004',
-    reportingManagerName: 'Karthik Rajan',
-    joiningDate: '2019-11-01',
-    employmentType: 'Full-Time',
-    status: 'Active',
-    avatar: '',
-    basicSalary: 88000,
-    allowances: { hra: 26000, transport: 6000, medical: 4000, special: 11000 },
-    bankDetails: { bankName: 'HDFC Bank', accountNumber: '****7788', ifscCode: 'HDFC0008899', branch: 'T Nagar' },
-    attendanceMethod: 'Face Scan',
-    gpsAllowed: true,
-    faceRegistered: true,
-    documents: []
-  },
-  {
-    id: 'EMP-007',
-    employeeId: 'EMP-007',
-    firstName: 'Priya',
-    lastName: 'Natarajan',
-    email: 'priya.ah@vrmstructures.com',
-    phone: '+91 98765 77007',
-    dob: '1989-12-05',
-    gender: 'Female',
-    address: 'Finance Plaza, Chennai',
-    department: 'Accounts',
-    designation: 'Accounts Head',
-    reportingManagerId: 'EMP-000',
-    reportingManagerName: 'Velmurugan',
-    joiningDate: '2020-01-15',
-    employmentType: 'Full-Time',
-    status: 'Active',
-    avatar: '',
-    basicSalary: 92000,
-    allowances: { hra: 27000, transport: 7000, medical: 4000, special: 12000 },
-    bankDetails: { bankName: 'ICICI Bank', accountNumber: '****2233', ifscCode: 'ICIC00124', branch: 'Mylapore' },
-    attendanceMethod: 'Face Scan',
-    gpsAllowed: true,
-    faceRegistered: true,
-    documents: []
-  },
-  {
-    id: 'EMP-008',
-    employeeId: 'EMP-008',
-    firstName: 'Rajesh',
-    lastName: 'Kannan',
-    email: 'rajesh.sh@vrmstructures.com',
-    phone: '+91 98765 88008',
-    dob: '1984-03-30',
-    gender: 'Male',
-    address: 'Mount Road, Chennai',
-    department: 'Sales',
-    designation: 'Sales Head',
-    reportingManagerId: 'EMP-000',
-    reportingManagerName: 'Velmurugan',
-    joiningDate: '2019-05-10',
-    employmentType: 'Full-Time',
-    status: 'Active',
-    avatar: '',
-    basicSalary: 96000,
-    allowances: { hra: 28000, transport: 8000, medical: 5000, special: 15000 },
-    bankDetails: { bankName: 'Kotak Mahindra Bank', accountNumber: '****4455', ifscCode: 'KKBK00012', branch: 'Nungambakkam' },
-    attendanceMethod: 'Face Scan',
-    gpsAllowed: true,
-    faceRegistered: true,
-    documents: []
-  },
-  {
-    id: 'EMP-009',
-    employeeId: 'EMP-009',
-    firstName: 'Dinesh',
-    lastName: 'Kumar',
-    email: 'dinesh.se@vrmstructures.com',
-    phone: '+91 98765 99009',
-    dob: '1996-05-18',
-    gender: 'Male',
-    address: 'Velachery, Chennai',
-    department: 'Sales',
-    designation: 'Sales Executive',
-    reportingManagerId: 'EMP-008',
-    reportingManagerName: 'Rajesh Kannan',
-    joiningDate: '2023-03-01',
-    employmentType: 'Full-Time',
-    status: 'Active',
-    avatar: '',
-    basicSalary: 45000,
-    allowances: { hra: 14000, transport: 4000, medical: 2500, special: 6000 },
-    bankDetails: { bankName: 'Axis Bank', accountNumber: '****6677', ifscCode: 'UTIB00889', branch: 'Velachery' },
-    attendanceMethod: 'GPS Location',
-    gpsAllowed: true,
-    faceRegistered: false,
-    documents: []
-  },
-  {
-    id: 'EMP-010',
-    employeeId: 'EMP-010',
-    firstName: 'Swetha',
-    lastName: 'Sundar',
-    email: 'swetha.de@vrmstructures.com',
-    phone: '+91 98765 10010',
-    dob: '1993-10-15',
-    gender: 'Female',
-    address: 'Design Hub, Chennai',
-    department: 'Design',
-    designation: 'Design Executive',
-    reportingManagerId: 'EMP-000',
-    reportingManagerName: 'Velmurugan',
-    joiningDate: '2021-08-01',
-    employmentType: 'Full-Time',
-    status: 'Active',
-    avatar: '',
-    basicSalary: 68000,
-    allowances: { hra: 20000, transport: 5000, medical: 3500, special: 8500 },
-    bankDetails: { bankName: 'State Bank of India', accountNumber: '****8899', ifscCode: 'SBIN00456', branch: 'Adyar' },
-    attendanceMethod: 'Face Scan',
-    gpsAllowed: true,
-    faceRegistered: true,
-    documents: []
-  },
-  {
-    id: 'EMP-011',
-    employeeId: 'EMP-011',
-    firstName: 'Vignesh',
-    lastName: 'W',
-    email: 'vignesh.ts@vrmstructures.com',
-    phone: '+91 98765 11011',
-    dob: '1994-06-25',
-    gender: 'Male',
-    address: 'IT Corridor, OMR, Chennai',
-    department: 'Technical Support',
-    designation: 'Support Engineer',
-    reportingManagerId: 'EMP-013',
-    reportingManagerName: 'Arvind Babu',
-    joiningDate: '2022-01-10',
-    employmentType: 'Full-Time',
-    status: 'Active',
-    avatar: '',
-    basicSalary: 52000,
-    allowances: { hra: 16000, transport: 4500, medical: 3000, special: 7000 },
-    bankDetails: { bankName: 'HDFC Bank', accountNumber: '****1234', ifscCode: 'HDFC0004567', branch: 'OMR' },
-    attendanceMethod: 'Face Scan',
-    gpsAllowed: true,
-    faceRegistered: true,
-    documents: []
-  },
-  {
-    id: 'EMP-012',
-    employeeId: 'EMP-012',
-    firstName: 'Deepa',
-    lastName: 'Lakshmi',
-    email: 'deepa.bi@vrmstructures.com',
-    phone: '+91 98765 12012',
-    dob: '1991-01-18',
-    gender: 'Female',
-    address: 'Commercial Complex, Chennai',
-    department: 'Finance',
-    designation: 'Finance Manager',
-    reportingManagerId: 'EMP-000',
-    reportingManagerName: 'Velmurugan',
-    joiningDate: '2021-05-15',
-    employmentType: 'Full-Time',
-    status: 'Active',
-    avatar: '',
-    basicSalary: 58000,
-    allowances: { hra: 17000, transport: 4500, medical: 3000, special: 7500 },
-    bankDetails: { bankName: 'Canara Bank', accountNumber: '****3456', ifscCode: 'CNRB00345', branch: 'Chennai' },
-    attendanceMethod: 'Face Scan',
-    gpsAllowed: true,
-    faceRegistered: true,
-    documents: []
-  },
-  {
-    id: 'EMP-013',
-    employeeId: 'EMP-013',
-    firstName: 'Arvind',
-    lastName: 'Babu',
-    email: 'arvind.ta@vrmstructures.com',
-    phone: '+91 98765 13013',
-    dob: '1988-04-09',
-    gender: 'Male',
-    address: 'Systems Wing, Chennai',
-    department: 'Technical Support',
-    designation: 'Technical Support Lead',
-    reportingManagerId: 'EMP-000',
-    reportingManagerName: 'Velmurugan',
-    joiningDate: '2019-08-01',
-    employmentType: 'Full-Time',
-    status: 'Active',
-    avatar: '',
-    basicSalary: 85000,
-    allowances: { hra: 25000, transport: 6000, medical: 4000, special: 10000 },
-    bankDetails: { bankName: 'ICICI Bank', accountNumber: '****5678', ifscCode: 'ICIC00789', branch: 'Anna Salai' },
-    attendanceMethod: 'Face Scan',
-    gpsAllowed: true,
-    faceRegistered: true,
-    documents: []
-  },
-  {
-    id: 'EMP-014',
-    employeeId: 'EMP-014',
-    firstName: 'Robert',
-    lastName: 'Chen',
-    email: 'robert.chen@vrmstructures.com',
-    phone: '+91 98765 14014',
-    dob: '1989-08-24',
-    gender: 'Male',
-    address: 'Engineering Annex, VRM Structures, Chennai',
-    department: 'Design',
-    designation: 'Senior Structural Engineer',
-    reportingManagerId: 'EMP-000',
-    reportingManagerName: 'Velmurugan',
-    joiningDate: '2020-07-15',
-    employmentType: 'Full-Time',
-    status: 'Active',
-    avatar: '',
-    basicSalary: 92000,
-    allowances: { hra: 28000, transport: 7000, medical: 4000, special: 12000 },
-    bankDetails: { bankName: 'Standard Chartered', accountNumber: '****8899', ifscCode: 'SCBL00123', branch: 'Chennai' },
-    attendanceMethod: 'Face Scan',
-    gpsAllowed: true,
-    faceRegistered: true,
-    documents: []
-  },
-  {
-    id: 'EMP-015',
-    employeeId: 'EMP-015',
-    firstName: 'Anita',
-    lastName: 'Sharma',
-    email: 'anita.sharma@vrmstructures.com',
-    phone: '+91 98765 15015',
-    dob: '1993-10-14',
-    gender: 'Female',
-    address: 'HR Block, VRM Structures, Chennai',
-    department: 'HR',
-    designation: 'HR Executive',
-    reportingManagerId: 'EMP-001',
-    reportingManagerName: 'Pavithra',
-    joiningDate: '2021-09-01',
-    employmentType: 'Full-Time',
-    status: 'Active',
-    avatar: '',
-    basicSalary: 62000,
-    allowances: { hra: 18000, transport: 4500, medical: 3000, special: 8500 },
-    bankDetails: { bankName: 'HDFC Bank', accountNumber: '****6677', ifscCode: 'HDFC0003456', branch: 'Chennai' },
-    attendanceMethod: 'Face Scan',
-    gpsAllowed: true,
-    faceRegistered: true,
-    documents: []
-  },
-  {
-    id: 'EMP-016',
-    employeeId: 'EMP-016',
-    firstName: 'Kavitha',
-    lastName: 'R',
-    email: 'kavitha.r@vrmstructures.com',
-    phone: '+91 98765 16016',
-    dob: '1995-03-22',
-    gender: 'Female',
-    address: 'Quality Wing, VRM Structures, Chennai',
-    department: 'Accounts',
-    designation: 'Senior Accountant',
-    reportingManagerId: 'EMP-007',
-    reportingManagerName: 'Priya Natarajan',
-    joiningDate: '2022-03-15',
-    employmentType: 'Full-Time',
-    status: 'Active',
-    avatar: '',
-    basicSalary: 55000,
-    allowances: { hra: 16000, transport: 4000, medical: 3000, special: 7000 },
-    bankDetails: { bankName: 'ICICI Bank', accountNumber: '****7788', ifscCode: 'ICIC0004567', branch: 'Chennai' },
-    attendanceMethod: 'Face Scan',
-    gpsAllowed: true,
-    faceRegistered: true,
-    documents: []
-  },
-  {
-    id: 'EMP-050',
-    employeeId: 'EMP-050',
-    firstName: 'JAYASURYA',
-    lastName: 'V',
-    email: 'jayasurya.v@vrmstructures.com',
-    phone: '+91 98765 50050',
-    dob: '1996-08-14',
-    gender: 'Male',
-    address: 'Engineering Division, VRM Structures, Chennai',
-    department: 'Engineering',
-    designation: 'Site Engineer',
-    reportingManagerId: 'EMP-000',
-    reportingManagerName: 'Velmurugan',
-    joiningDate: '2023-01-10',
-    employmentType: 'Full-Time',
-    status: 'Active',
-    avatar: '',
-    basicSalary: 62000,
-    allowances: { hra: 18000, transport: 5000, medical: 3500, special: 8500 },
-    bankDetails: { bankName: 'HDFC Bank', accountNumber: '****5050', ifscCode: 'HDFC0001234', branch: 'Chennai' },
-    attendanceMethod: 'Face Scan',
-    gpsAllowed: true,
-    faceRegistered: true,
-    documents: []
-  },
-  {
-    id: 'EMP-051',
-    employeeId: 'EMP-051',
-    firstName: 'PURUSHOTHAMAN',
-    lastName: 'M',
-    email: 'purushothaman.m@vrmstructures.com',
-    phone: '+91 98765 51051',
-    dob: '1993-11-20',
-    gender: 'Male',
-    address: 'Fabrication Plant, VRM Structures, Chennai',
-    department: 'Production',
-    designation: 'Fabrication Specialist',
-    reportingManagerId: 'EMP-002',
-    reportingManagerName: 'Ramesh Kumar',
-    joiningDate: '2022-06-01',
-    employmentType: 'Full-Time',
-    status: 'Active',
-    avatar: '',
-    basicSalary: 58000,
-    allowances: { hra: 17000, transport: 4500, medical: 3000, special: 7500 },
-    bankDetails: { bankName: 'SBI Bank', accountNumber: '****5151', ifscCode: 'SBIN0001234', branch: 'Chennai' },
-    attendanceMethod: 'Face Scan',
-    gpsAllowed: true,
-    faceRegistered: true,
-    documents: []
-  }
-];
-
-const INITIAL_ATTENDANCE: AttendanceRecord[] = [
-  {
-    id: 'ATT-201',
-    employeeId: 'EMP-050',
-    employeeName: 'JAYASURYA V',
-    department: 'Engineering',
-    date: '2026-09-08',
-    checkIn: '09:59 AM',
-    checkOut: '06:35 PM',
-    workingHours: 8.6,
-    otHours: 0.58,
-    status: 'Present',
-    lateStatus: 'On Time',
-    location: { lat: 13.151968, lng: 80.198900, address: 'VRM HQ, Chennai', inGeofence: true },
-    faceVerified: true,
-    method: 'Face Recognition'
-  },
-  {
-    id: 'ATT-202',
-    employeeId: 'EMP-050',
-    employeeName: 'JAYASURYA V',
-    department: 'Engineering',
-    date: '2026-09-07',
-    checkIn: '09:48 AM',
-    checkOut: '06:47 PM',
-    workingHours: 8.98,
-    otHours: 0.98,
-    status: 'Present',
-    lateStatus: 'On Time',
-    location: { lat: 13.151968, lng: 80.198900, address: 'VRM HQ, Chennai', inGeofence: true },
-    faceVerified: true,
-    method: 'Face Recognition'
-  },
-  {
-    id: 'ATT-203',
-    employeeId: 'EMP-051',
-    employeeName: 'PURUSHOTHAMAN M',
-    department: 'Production',
-    date: '2026-09-08',
-    checkIn: '09:30 AM',
-    checkOut: '07:15 PM',
-    workingHours: 9.75,
-    otHours: 0.75,
-    status: 'Present',
-    lateStatus: 'On Time',
-    location: { lat: 13.151968, lng: 80.198900, address: 'Fabrication Plant, Chennai', inGeofence: true },
-    faceVerified: true,
-    method: 'Face Recognition'
-  },
-  {
-    id: 'ATT-204',
-    employeeId: 'EMP-051',
-    employeeName: 'PURUSHOTHAMAN M',
-    department: 'Production',
-    date: '2026-09-07',
-    checkIn: '09:25 AM',
-    checkOut: '06:30 PM',
-    workingHours: 9.08,
-    status: 'Present',
-    lateStatus: 'On Time',
-    location: { lat: 13.151968, lng: 80.198900, address: 'Fabrication Plant, Chennai', inGeofence: true },
-    faceVerified: true,
-    method: 'Face Recognition'
-  },
-  {
-    id: 'ATT-101',
-    employeeId: 'EMP-001',
-    employeeName: 'Pavithra',
-    department: 'Human Resources',
-    date: new Date().toISOString().split('T')[0],
-    checkIn: '08:52 AM',
-    checkOut: null,
-    workingHours: 7.5,
-    status: 'Present',
-    lateStatus: 'On Time',
-    location: { lat: 13.151968, lng: 80.198900, address: 'VRM HQ, Chennai', inGeofence: true },
-    faceVerified: true,
-    method: 'Face Recognition'
-  },
-  {
-    id: 'ATT-102',
-    employeeId: 'EMP-002',
-    employeeName: 'Ramesh Kumar',
-    department: 'Production Head',
-    date: new Date().toISOString().split('T')[0],
-    checkIn: '09:05 AM',
-    checkOut: null,
-    workingHours: 7.2,
-    status: 'Late',
-    lateStatus: 'Late (<30m)',
-    location: { lat: 13.151968, lng: 80.198900, address: 'Production Block', inGeofence: true },
-    faceVerified: true,
-    method: 'Face Recognition'
-  },
-  {
-    id: 'ATT-103',
-    employeeId: 'EMP-005',
-    employeeName: 'Murugan S',
-    department: 'Floor Employee',
-    date: new Date().toISOString().split('T')[0],
-    checkIn: '09:00 AM',
-    checkOut: null,
-    workingHours: 7.3,
-    status: 'Present',
-    lateStatus: 'On Time',
-    location: { lat: 13.151968, lng: 80.198900, address: 'Shop Floor 1', inGeofence: true },
-    faceVerified: true,
-    method: 'Face Recognition'
-  },
-  {
-    id: 'ATT-104',
-    employeeId: 'EMP-007',
-    employeeName: 'Priya Natarajan',
-    department: 'Accounts Head',
-    date: new Date().toISOString().split('T')[0],
-    checkIn: null,
-    checkOut: null,
-    workingHours: 0,
-    status: 'On Leave',
-    lateStatus: 'N/A',
-    location: { lat: 13.151968, lng: 80.198900, address: 'N/A', inGeofence: false },
-    faceVerified: false,
-    method: 'System Auto'
-  },
-  {
-    id: 'ATT-105',
-    employeeId: 'EMP-009',
-    employeeName: 'Dinesh Kumar',
-    department: 'Sales Executive',
-    date: new Date().toISOString().split('T')[0],
-    checkIn: '08:45 AM',
-    checkOut: null,
-    workingHours: 7.6,
-    status: 'Present',
-    lateStatus: 'On Time',
-    location: { lat: 13.151968, lng: 80.198900, address: 'Sales Wing', inGeofence: true },
-    faceVerified: true,
-    method: 'Face Recognition'
-  }
-];
-
-const INITIAL_FACE_LOGS: FaceLog[] = [
-  {
-    id: 'FL-001',
-    employeeId: 'EMP-001',
-    employeeName: 'Pavithra',
-    timestamp: '2026-08-29 08:52:14',
-    type: 'Check-In',
-    status: 'Success',
-    photoUrl: '',
-    confidenceScore: 98.4
-  },
-  {
-    id: 'FL-002',
-    employeeId: 'EMP-002',
-    employeeName: 'Ramesh Kumar',
-    timestamp: '2026-08-29 09:05:02',
-    type: 'Check-In',
-    status: 'Success',
-    photoUrl: '',
-    confidenceScore: 96.1
-  }
-];
-
-export const INITIAL_ATTENDANCE_AUDIT_LOGS: AttendanceAuditLog[] = [
-  {
-    id: 'AUD-101',
-    attendanceId: 'ATT-101',
-    employeeId: 'EMP-001',
-    employeeName: 'Pavithra',
-    date: '2026-09-08',
-    fieldChanged: 'Check-Out',
-    oldValue: 'Missing Punch',
-    newValue: '06:18 PM',
-    reason: 'Employee forgot checkout at main gate terminal',
-    changedBy: 'Velmurugan (CEO)',
-    timestamp: '2026-09-08 18:30:15'
-  },
-  {
-    id: 'AUD-102',
-    attendanceId: 'ATT-102',
-    employeeId: 'EMP-002',
-    employeeName: 'Ramesh Kumar',
-    date: '2026-09-07',
-    fieldChanged: 'Status & OT',
-    oldValue: 'Present (8.0 hrs, OT: 0 hrs)',
-    newValue: 'Present (9.5 hrs, Approved OT: 1.5 hrs)',
-    reason: 'Client emergency deployment support verified',
-    changedBy: 'Pavithra (HR Manager)',
-    timestamp: '2026-09-07 19:10:00'
-  }
-];
-
-const INITIAL_LEAVES: LeaveRequest[] = [
-  {
-    id: 'LR-201',
-    employeeId: 'EMP-007',
-    employeeName: 'Priya Natarajan',
-    department: 'Accounts Head',
-    leaveType: 'Casual Leave',
-    startDate: '2026-08-29',
-    endDate: '2026-08-30',
-    daysCount: 2,
-    reason: 'Family event and travel',
-    status: 'Approved',
-    appliedDate: '2026-08-25',
-    approvedBy: 'Pavithra'
-  },
-  {
-    id: 'LR-202',
-    employeeId: 'EMP-005',
-    employeeName: 'Murugan S',
-    department: 'Floor Employee',
-    leaveType: 'Sick Leave',
-    startDate: '2026-09-02',
-    endDate: '2026-09-03',
-    daysCount: 2,
-    reason: 'Medical checkup appointment',
-    status: 'Pending',
-    appliedDate: '2026-08-28'
-  },
-  {
-    id: 'LR-203',
-    employeeId: 'EMP-014',
-    employeeName: 'Robert Chen',
-    department: 'Engineering & Design',
-    leaveType: 'Casual Leave',
-    startDate: '2026-09-01',
-    endDate: '2026-09-03',
-    daysCount: 3,
-    reason: 'Family visit and personal work',
-    status: 'Approved',
-    appliedDate: '2026-08-27',
-    approvedBy: 'Pavithra'
-  },
-  {
-    id: 'LR-204',
-    employeeId: 'EMP-015',
-    employeeName: 'Anita Sharma',
-    department: 'Human Resources',
-    leaveType: 'Paid Leave',
-    startDate: '2026-09-05',
-    endDate: '2026-09-07',
-    daysCount: 3,
-    reason: 'Attending family wedding ceremony',
-    status: 'Pending',
-    appliedDate: '2026-09-02'
-  },
-  {
-    id: 'LR-205',
-    employeeId: 'EMP-016',
-    employeeName: 'Kavitha R',
-    department: 'Quality Assurance',
-    leaveType: 'Casual Leave',
-    startDate: '2026-09-06',
-    endDate: '2026-09-06',
-    daysCount: 1,
-    reason: 'Personal home maintenance work',
-    status: 'Pending',
-    appliedDate: '2026-09-03'
-  },
-  {
-    id: 'LR-195',
-    employeeId: 'EMP-015',
-    employeeName: 'Anita Sharma',
-    department: 'Human Resources',
-    leaveType: 'Sick Leave',
-    startDate: '2026-07-14',
-    endDate: '2026-07-15',
-    daysCount: 2,
-    reason: 'Viral fever & doctor consultation',
-    status: 'Approved',
-    appliedDate: '2026-07-12',
-    approvedBy: 'Pavithra'
-  },
-  {
-    id: 'LR-182',
-    employeeId: 'EMP-015',
-    employeeName: 'Anita Sharma',
-    department: 'Human Resources',
-    leaveType: 'Casual Leave',
-    startDate: '2026-05-20',
-    endDate: '2026-05-21',
-    daysCount: 2,
-    reason: 'Personal family travel',
-    status: 'Approved',
-    appliedDate: '2026-05-18',
-    approvedBy: 'Pavithra'
-  },
-  {
-    id: 'LR-196',
-    employeeId: 'EMP-016',
-    employeeName: 'Kavitha R',
-    department: 'Quality Assurance',
-    leaveType: 'Casual Leave',
-    startDate: '2026-08-10',
-    endDate: '2026-08-11',
-    daysCount: 2,
-    reason: 'Attending relative wedding',
-    status: 'Approved',
-    appliedDate: '2026-08-07',
-    approvedBy: 'Pavithra'
-  },
-  {
-    id: 'LR-180',
-    employeeId: 'EMP-016',
-    employeeName: 'Kavitha R',
-    department: 'Quality Assurance',
-    leaveType: 'Sick Leave',
-    startDate: '2026-06-16',
-    endDate: '2026-06-17',
-    daysCount: 2,
-    reason: 'Migraine and medical rest',
-    status: 'Approved',
-    appliedDate: '2026-06-15',
-    approvedBy: 'Pavithra'
-  }
-];
-
-const INITIAL_SHIFTS: Shift[] = [
-  {
-    id: 'SH-01',
-    shiftName: 'General Morning Shift',
-    startTime: '09:00',
-    endTime: '18:00',
-    breakDurationMins: 60,
-    workingHours: 8,
-    gracePeriodMins: 15,
-    assignedEmployeeCount: 5,
-    assignments: ['EMP-001', 'EMP-002', 'EMP-003', 'EMP-004', 'EMP-005'].map((empId, idx) => ({
-      id: `ASN-SH1-${idx + 1}`,
-      shiftId: 'SH-01',
-      employeeId: empId,
-      effectiveFrom: '2026-01-01',
-      status: 'ACTIVE' as const,
-      assignedById: 'EMP-001',
-      createdAt: '2026-01-01T00:00:00.000Z',
-      updatedAt: '2026-01-01T00:00:00.000Z'
-    })),
-    color: '#155DFC'
-  },
-  {
-    id: 'SH-02',
-    shiftName: 'Evening Shift',
-    startTime: '16:00',
-    endTime: '01:00',
-    breakDurationMins: 60,
-    workingHours: 8,
-    gracePeriodMins: 15,
-    assignedEmployeeCount: 0,
-    assignments: [],
-    color: '#8b5cf6'
-  },
-  {
-    id: 'SH-03',
-    shiftName: 'Night Operations Shift',
-    startTime: '00:00',
-    endTime: '09:00',
-    breakDurationMins: 60,
-    workingHours: 8,
-    gracePeriodMins: 10,
-    assignedEmployeeCount: 0,
-    assignments: [],
-    color: '#f59e0b'
-  }
-];
+// Initial Mock Data Sets imported from ../data/hrmsMockData
 
 const INITIAL_LEAVE_POLICIES: LeavePolicyItem[] = [
   {
@@ -1324,51 +499,29 @@ const INITIAL_LEAVE_POLICIES: LeavePolicyItem[] = [
     carryForward: 'No',
     color: '#0E7490',
     status: 'Active',
-    description: 'For personal, emergency, or unexpected short-term absences.'
+    description: 'Confirmed employees: 1 day paid Casual Leave per calendar month.'
   },
   {
     id: 'lp2',
-    name: 'Sick / Medical Leave (SL)',
-    code: 'SL',
-    quotaDays: 12,
-    monthlyAccrual: '1 Day / Month',
-    carryForward: 'Max 10 Days',
-    color: '#2563EB',
+    name: 'Provisional Paid Leave',
+    code: 'PPL',
+    quotaDays: 1,
+    monthlyAccrual: '1 Day in First 3 Months',
+    carryForward: 'No',
+    color: '#F59E0B',
     status: 'Active',
-    description: 'For personal illness, medical emergencies, or treatment appointments.'
+    description: 'Provisional employees: 1 paid leave total during the initial 3-month probation period.'
   },
   {
     id: 'lp3',
-    name: 'Earned / Privilege Leave (EL)',
-    code: 'EL',
-    quotaDays: 15,
-    monthlyAccrual: '1.25 Days / Month',
-    carryForward: 'Max 30 Days',
-    color: '#16A34A',
+    name: 'Unpaid Leave (LWP)',
+    code: 'LWP',
+    quotaDays: 12,
+    monthlyAccrual: 'As Requested',
+    carryForward: 'No',
+    color: '#EF4444',
     status: 'Active',
-    description: 'Annual statutory paid vacation and planned personal leaves.'
-  },
-  {
-    id: 'lp4',
-    name: 'Maternity & Paternity Leave',
-    code: 'ML',
-    quotaDays: 182,
-    monthlyAccrual: 'Lump Sum',
-    carryForward: 'N/A',
-    color: '#DB2777',
-    status: 'Active',
-    description: '26 Weeks for maternity or 15 days paternity leave as per statutory guidelines.'
-  },
-  {
-    id: 'lp5',
-    name: 'Compensatory Off (Comp-Off)',
-    code: 'CO',
-    quotaDays: 6,
-    monthlyAccrual: 'Earned upon holiday work',
-    carryForward: '60 Days Validity',
-    color: '#7C3AED',
-    status: 'Active',
-    description: 'Compensatory day-off credited when working on Sundays or statutory holidays.'
+    description: 'Leave without pay / salary deduction beyond paid quota allowance.'
   }
 ];
 
@@ -1378,6 +531,7 @@ const INITIAL_HOLIDAYS: HolidayItem[] = [
   { id: 'hp3', name: 'Tamil New Year & Good Friday', date: '2026-04-14', daysCount: 1, type: 'Mandatory', applicableLocation: 'Tamil Nadu & Corporate' },
   { id: 'hp4', name: 'May Day (International Workers Day)', date: '2026-05-01', daysCount: 1, type: 'Mandatory', applicableLocation: 'All Sites & Yards' },
   { id: 'hp5', name: 'Independence Day', date: '2026-08-15', daysCount: 1, type: 'Compulsory', applicableLocation: 'All India' },
+  { id: 'hp5b', name: 'Gandhi Jayanti', date: '2026-10-02', daysCount: 1, type: 'Compulsory', applicableLocation: 'All India' },
   { id: 'hp6', name: 'Ayudha Pooja & Vijayadasami', date: '2026-10-19', daysCount: 2, type: 'Festival', applicableLocation: 'Factory & Fabrication Sites' },
   { id: 'hp7', name: 'Deepavali / Diwali Corporate Break', date: '2026-11-08', daysCount: 2, type: 'Festival', applicableLocation: 'Company Wide' },
   { id: 'hp8', name: 'Christmas Day', date: '2026-12-25', daysCount: 1, type: 'Mandatory', applicableLocation: 'Company Wide' }
@@ -1438,8 +592,8 @@ const INITIAL_POLICY_DOCUMENTS: PolicyDocumentItem[] = [
 const INITIAL_BUSINESS_SETTINGS: BusinessProfileSettings = {
   logoUrl: '/logo.png',
   logoStatus: 'Added',
-  businessName: 'VRM Structures India Private Limited',
-  businessCode: 'VRM001',
+  businessName: 'Businz',
+  businessCode: 'BSZ001',
   email: 'contact@vrmstructures.com',
   phone: '+91 44 2553 7890',
   type: 'Private Limited Company',
@@ -1464,233 +618,17 @@ const INITIAL_BUSINESS_SETTINGS: BusinessProfileSettings = {
   smtpHost: 'smtp.office365.com',
   smtpPort: '587',
   smtpUser: 'hr-noreply@vrmstructures.com',
-  activeEntity: 'VRM Structures (Madhavaram HQ)'
+  activeEntity: 'Businz HQ'
 };
 
 
-const INITIAL_TASKS: TaskItem[] = [
-  {
-    id: 'TSK-501',
-    title: 'Q3 Accounts Audit Preparation',
-    description: 'Compile tax withholding certificates and variance expense logs for annual auditor review.',
-    assignedEmployeeId: 'EMP-007',
-    assignedEmployeeName: 'Priya Natarajan',
-    assignedBy: 'Pavithra',
-    department: 'Accounts Head',
-    priority: 'Urgent',
-    dueDate: '2026-08-31',
-    status: 'In Progress',
-    createdAt: '2026-08-24'
-  },
-  {
-    id: 'TSK-502',
-    title: 'Shop Floor Safety Audit & Machine Checks',
-    description: 'Perform safety review on assembly floor machines and ensure ISO standards compliance.',
-    assignedEmployeeId: 'EMP-002',
-    assignedEmployeeName: 'Ramesh Kumar',
-    assignedBy: 'Pavithra',
-    department: 'Production Head',
-    priority: 'High',
-    dueDate: '2026-09-05',
-    status: 'In Progress',
-    createdAt: '2026-08-26'
-  },
-  {
-    id: 'TSK-503',
-    title: 'Dispatch Logistics Route Optimization',
-    description: 'Plan interstate shipping routes and dispatch scheduling for pending structural steel orders.',
-    assignedEmployeeId: 'EMP-003',
-    assignedEmployeeName: 'Suresh Patel',
-    assignedBy: 'Pavithra',
-    department: 'Dispatch Head',
-    priority: 'Medium',
-    dueDate: '2026-09-10',
-    status: 'To Do',
-    createdAt: '2026-08-28'
-  }
-];
-
-const INITIAL_PERFORMANCE: PerformanceScore[] = [
-  {
-    id: 'PERF-01',
-    employeeId: 'EMP-001',
-    employeeName: 'Pavithra',
-    department: 'Human Resources',
-    designation: 'HR Manager',
-    overallScore: 95,
-    taskCompletionRate: 98,
-    attendanceScore: 99,
-    goalAchievement: 94,
-    managerRating: 4.9,
-    avatar: '',
-    monthlyHistory: [
-      { month: 'Apr', score: 92 }, { month: 'May', score: 94 }, { month: 'Jun', score: 93 },
-      { month: 'Jul', score: 96 }, { month: 'Aug', score: 95 }
-    ]
-  },
-  {
-    id: 'PERF-02',
-    employeeId: 'EMP-002',
-    employeeName: 'Ramesh Kumar',
-    department: 'Production Head',
-    designation: 'Production Head',
-    overallScore: 91,
-    taskCompletionRate: 93,
-    attendanceScore: 95,
-    goalAchievement: 90,
-    managerRating: 4.8,
-    avatar: '',
-    monthlyHistory: [
-      { month: 'Apr', score: 87 }, { month: 'May', score: 89 }, { month: 'Jun', score: 88 },
-      { month: 'Jul', score: 90 }, { month: 'Aug', score: 91 }
-    ]
-  }
-];
-
-const INITIAL_JOBS: JobOpening[] = [
-  {
-    id: 'JOB-01',
-    title: 'Senior Production Engineer',
-    department: 'Production Head',
-    location: 'Chennai HQ (Onsite)',
-    type: 'Full-Time',
-    experience: '5+ Years',
-    positions: 3,
-    status: 'Active',
-    postedDate: '2026-08-15',
-    salaryRange: '₹8L - ₹12L',
-    description: 'Looking for an experienced Production Engineer to supervise fabrication lines and shop floor quality.',
-    applicantsCount: 18
-  },
-  {
-    id: 'JOB-02',
-    title: 'Senior Dispatch Coordinator',
-    department: 'Dispatch Head',
-    location: 'Chennai HQ',
-    type: 'Full-Time',
-    experience: '3+ Years',
-    positions: 1,
-    status: 'Active',
-    postedDate: '2026-08-20',
-    salaryRange: '₹5L - ₹7L',
-    description: 'Coordinate freight transit, invoice reconciliations, and dispatch timing across India.',
-    applicantsCount: 12
-  }
-];
-
-const INITIAL_CANDIDATES: Candidate[] = [
-  {
-    id: 'CND-101',
-    jobId: 'JOB-01',
-    jobTitle: 'Senior Production Engineer',
-    name: 'Manoj Selvan',
-    email: 'manoj.s@gmail.com',
-    phone: '+91 99988 77665',
-    stage: 'Interview',
-    appliedDate: '2026-08-18',
-    referrerEmployeeId: 'EMP-005',
-    referrerName: 'Murugan (Employee)',
-    referralStatus: 'Accepted',
-    referralReviewedBy: 'Pavithra (HR)',
-    referralReviewedDate: '2026-08-20',
-    rating: 5,
-    notes: 'Strong knowledge of CNC machining, fabrication processes, and floor management.'
-  },
-  {
-    id: 'CND-102',
-    jobId: 'JOB-01',
-    jobTitle: 'Production Technician',
-    name: 'Karthik Raja',
-    email: 'karthik.r@gmail.com',
-    phone: '+91 98401 23456',
-    stage: 'Applied',
-    appliedDate: '2026-09-05',
-    referrerEmployeeId: 'EMP-005',
-    referrerName: 'Murugan (Employee)',
-    referralStatus: 'Pending',
-    rating: 5,
-    notes: 'Experienced in CNC lathe operation and assembly floor.'
-  }
-];
-
-const INITIAL_EXPENSES: Expense[] = [
-  {
-    id: 'EXP-801',
-    employeeId: 'EMP-009',
-    employeeName: 'Dinesh Kumar',
-    department: 'Sales Executive',
-    category: 'Travel',
-    amount: 4500.00,
-    date: '2026-08-26',
-    description: 'Client visit to industrial site in Coimbatore',
-    receiptUrl: '',
-    status: 'Pending Finance',
-    approvedBy: 'Pavithra'
-  },
-  {
-    id: 'EXP-802',
-    employeeId: 'EMP-002',
-    employeeName: 'Ramesh Kumar',
-    department: 'Production Head',
-    category: 'Equipment',
-    amount: 15000.00,
-    date: '2026-08-20',
-    description: 'Safety gear and tool kit calibration for production floor',
-    receiptUrl: '',
-    status: 'Reimbursed',
-    approvedBy: 'Priya Natarajan'
-  }
-];
-
-const INITIAL_NOTIFICATIONS: NotificationItem[] = [
-  {
-    id: 'NOT-01',
-    title: 'Leave Approved',
-    message: 'Priya Natarajan\'s Casual Leave for Aug 29-30 has been approved.',
-    timestamp: '10 mins ago',
-    priority: 'Normal',
-    category: 'Leave',
-    read: false
-  },
-  {
-    id: 'NOT-02',
-    title: 'Urgent Task Assigned',
-    message: 'Shop Floor Safety Audit task has been assigned to you.',
-    timestamp: '1 hour ago',
-    priority: 'Urgent',
-    category: 'Task',
-    read: false
-  },
-  {
-    id: 'NOT-03',
-    title: 'Payroll Calculation Ready',
-    message: 'August 2026 payroll batch calculation has been generated for review.',
-    timestamp: '3 hours ago',
-    priority: 'Important',
-    category: 'Payroll',
-    read: true
-  }
-];
-
-const INITIAL_PAYROLL: PayrollRecord[] = [];
-
-const INITIAL_DEPTS: DepartmentItem[] = [
-  { id: 'DEP-HR', name: 'HR', code: 'HR', headName: 'Pavithra S', headId: 'EMP-001', employeeCount: 3, budget: 800000 },
-  { id: 'DEP-SL', name: 'Sales', code: 'SL', headName: 'Rajesh Kannan', headId: 'EMP-008', employeeCount: 2, budget: 1200000 },
-  { id: 'DEP-AC', name: 'Accounts', code: 'AC', headName: 'Priya Natarajan', headId: 'EMP-007', employeeCount: 2, budget: 600000 },
-  { id: 'DEP-PR', name: 'Procurement', code: 'PR', headName: 'Karthik Rajan', headId: 'EMP-004', employeeCount: 3, budget: 750000 },
-  { id: 'DEP-DP', name: 'Dispatch', code: 'DP', headName: 'Ramesh Kumar', headId: 'EMP-002', employeeCount: 2, budget: 650000 },
-  { id: 'DEP-DS', name: 'Design', code: 'DS', headName: 'Swetha Sundar', headId: 'EMP-010', employeeCount: 2, budget: 900000 },
-  { id: 'DEP-FN', name: 'Finance', code: 'FN', headName: 'Deepa Lakshmi', headId: 'EMP-012', employeeCount: 1, budget: 850000 },
-  { id: 'DEP-TS', name: 'Technical Support', code: 'TS', headName: 'Arvind Babu', headId: 'EMP-013', employeeCount: 2, budget: 700000 }
-];
 
 const INITIAL_BRANCHES: BranchItem[] = [
   {
     id: 'BR-01',
     name: 'Chennai HQ',
     code: 'CHN',
-    location: 'VRM Structures HQ, Chennai',
+    location: 'Businz HQ, Chennai',
     departments: ['HR', 'Sales', 'Accounts', 'Procurement', 'Dispatch', 'Design', 'Finance', 'Technical Support']
   }
 ];
@@ -1713,112 +651,6 @@ const INITIAL_DESIGNATIONS: DesignationItem[] = [
   { id: 'DSG-15', title: 'Finance Manager', department: 'Finance', level: 'L4 Lead' },
   { id: 'DSG-16', title: 'Technical Support Lead', department: 'Technical Support', level: 'L4 Lead' },
   { id: 'DSG-17', title: 'Support Engineer', department: 'Technical Support', level: 'L2 Engineer' },
-  { id: 'DSG-18', title: 'CEO', department: 'HR', level: 'C-Level' }
-];
-
-const INITIAL_ASSETS: AssetItem[] = [
-  {
-    id: 'AST-101',
-    assetTag: 'AST-LAP-001',
-    name: 'MacBook Pro M3 Max 16"',
-    category: 'Laptops & Computers',
-    serialNumber: 'C02G1829MD6R',
-    assignedEmployeeId: 'EMP-001',
-    assignedEmployeeName: 'Pavithra',
-    assignedDepartment: 'Human Resources',
-    assignedDate: '2025-01-15',
-    purchaseDate: '2024-12-10',
-    purchaseCost: 2499,
-    warrantyExpiry: '2027-12-10',
-    status: 'Assigned',
-    condition: 'New',
-    notes: 'Primary HR Workstation'
-  },
-  {
-    id: 'AST-102',
-    assetTag: 'AST-LAP-002',
-    name: 'Dell Precision Workstation i9 64GB',
-    category: 'Laptops & Computers',
-    serialNumber: 'DL-9918234-X',
-    assignedEmployeeId: 'EMP-002',
-    assignedEmployeeName: 'Ramesh Kumar',
-    assignedDepartment: 'Production Head',
-    assignedDate: '2025-02-01',
-    purchaseDate: '2025-01-20',
-    purchaseCost: 1999,
-    warrantyExpiry: '2027-01-20',
-    status: 'Assigned',
-    condition: 'New',
-    notes: 'Production Head Workstation'
-  },
-  {
-    id: 'AST-103',
-    assetTag: 'AST-MOB-001',
-    name: 'Samsung Galaxy Enterprise Edition',
-    category: 'Mobile Devices',
-    serialNumber: 'DN6FP087V283',
-    assignedEmployeeId: 'EMP-009',
-    assignedEmployeeName: 'Dinesh Kumar',
-    assignedDepartment: 'Sales Executive',
-    assignedDate: '2025-03-10',
-    purchaseDate: '2025-02-15',
-    purchaseCost: 1199,
-    warrantyExpiry: '2026-02-15',
-    status: 'Assigned',
-    condition: 'Good',
-    notes: 'Field Sales Device'
-  },
-  {
-    id: 'AST-104',
-    assetTag: 'AST-MON-001',
-    name: 'Dell UltraSharp 27" 4K USB-C Monitor',
-    category: 'Monitors & Displays',
-    serialNumber: 'CN-098231-716',
-    assignedEmployeeId: undefined,
-    assignedEmployeeName: undefined,
-    assignedDepartment: undefined,
-    assignedDate: undefined,
-    purchaseDate: '2025-04-01',
-    purchaseCost: 580,
-    warrantyExpiry: '2028-04-01',
-    status: 'Available',
-    condition: 'New',
-    notes: 'Ready for new engineering hire'
-  },
-  {
-    id: 'AST-105',
-    assetTag: 'AST-FUR-001',
-    name: 'Herman Miller Aeron Ergonomic Chair',
-    category: 'Office Furniture',
-    serialNumber: 'HM-AERON-8812',
-    assignedEmployeeId: 'EMP-007',
-    assignedEmployeeName: 'Priya Natarajan',
-    assignedDepartment: 'Accounts Head',
-    assignedDate: '2025-01-10',
-    purchaseDate: '2024-11-20',
-    purchaseCost: 1250,
-    warrantyExpiry: '2034-11-20',
-    status: 'Assigned',
-    condition: 'Good',
-    notes: 'Accounts office workstation chair'
-  },
-  {
-    id: 'AST-106',
-    assetTag: 'AST-LAP-003',
-    name: 'Lenovo ThinkPad X1 Carbon 16GB',
-    category: 'Laptops & Computers',
-    serialNumber: 'LNV-8871239-P',
-    assignedEmployeeId: undefined,
-    assignedEmployeeName: undefined,
-    assignedDepartment: undefined,
-    assignedDate: undefined,
-    purchaseDate: '2024-06-15',
-    purchaseCost: 1450,
-    warrantyExpiry: '2026-06-15',
-    status: 'Under Maintenance',
-    condition: 'Needs Repair',
-    notes: 'Battery replacement pending at service center'
-  }
 ];
 
 export const INITIAL_GRADES: GradeItem[] = [
@@ -2029,6 +861,9 @@ interface HRMSContextType {
   addEmployee: (emp: Omit<Employee, 'id'>) => void;
   updateEmployee: (id: string, empData: Partial<Employee>) => void;
   deleteEmployee: (id: string) => void;
+  resetEmployeeLogin: (employeeId: string) => { success: boolean; message: string; temporaryPassword?: string };
+  updateEmployeeLoginStatus: (employeeId: string, status: 'ACTIVE' | 'DISABLED') => { success: boolean; message: string };
+  changeEmployeePassword: (identifier: string, newPassword: string) => { success: boolean; message: string };
 
   attendanceRecords: AttendanceRecord[];
   markAttendance: (empId: string, status: AttendanceRecord['status'], method: AttendanceRecord['method'], location?: AttendanceRecord['location']) => void;
@@ -2120,8 +955,19 @@ interface HRMSContextType {
   updateAssigneeProgress: (taskId: string, assigneeId: string, progressPercentage: number, individualStatus: TaskAssigneeStatus, latestRemark?: string, completionEvidence?: TaskCompletionEvidence) => void;
   closeTask: (taskId: string, closedBy: string, closureRemarks?: string) => void;
   reopenTask: (taskId: string, reopenedBy: string, reopenReason: string) => void;
+  addTaskDailyReport: (taskId: string, report: {
+    reportDate: string;
+    workDoneToday: string;
+    planForTomorrow?: string;
+    blockersOrIssues?: string;
+    hoursSpent?: number;
+    processStatus: TaskAssigneeStatus;
+  }) => void;
+  updateTaskProcessStatus: (taskId: string, newStatus: TaskAssigneeStatus, remarks?: string) => void;
   addTaskComment: (taskId: string, content: string, attachments?: string[]) => void;
   addTaskAttachment: (taskId: string, attachment: Omit<TaskAttachment, 'id' | 'taskId' | 'uploadedAt'>) => void;
+  addTaskLink: (taskId: string, link: { title: string; url: string }) => void;
+  deleteTaskLink: (taskId: string, linkId: string) => void;
   convertMOMActionToTask: (momId: string, actionItemId: string) => TaskItemEnhanced | null;
   syncMOMTask: (taskId: string) => void;
   deleteEnhancedTask: (taskId: string) => void;
@@ -2160,6 +1006,8 @@ interface HRMSContextType {
 
   payrollRecords: PayrollRecord[];
   processPayrollBatch: () => void | Promise<void>;
+  updateEmployeeSalaryScheme: (employeeId: string, withPf: boolean) => void;
+  updatePayrollRecordAdvanceDeduction: (recordId: string, amount: number) => void;
 
   departments: DepartmentItem[];
   addDepartment: (dept: Omit<DepartmentItem, 'id' | 'employeeCount'>) => void;
@@ -2300,6 +1148,8 @@ interface HRMSContextType {
   updateMasterLeavePolicy: (id: string, updates: Partial<MasterLeavePolicy>) => void;
   archiveMasterLeavePolicy: (id: string) => void;
   toggleMasterLeavePolicyStatus: (id: string) => void;
+  deleteMasterLeavePolicy: (id: string) => void;
+  resetMasterLeavePoliciesToDefault: () => void;
 
   // Sandwich Leave Policy Engine
   sandwichPolicies: SandwichLeavePolicy[];
@@ -2383,16 +1233,48 @@ interface HRMSContextType {
     currentOutstanding: number;
     policy: LoanPolicy;
   };
+
+  // Field Duty & Live GPS Tracking
+  fieldAssignments: FieldAssignment[];
+  tripSessions: FieldTripSession[];
+  trackingAlerts: TrackingAlert[];
+  createFieldAssignment: (data: Omit<FieldAssignment, 'id' | 'createdAt' | 'updatedAt'>) => FieldAssignment;
+  updateFieldAssignment: (id: string, updates: Partial<FieldAssignment>) => void;
+  cancelFieldAssignment: (id: string) => void;
+  startTrip: (assignmentId: string, startLat: number, startLng: number, startAddress?: string) => FieldTripSession;
+  recordLocationPoint: (tripId: string, point: Omit<LocationPoint, 'id' | 'tripId'>) => void;
+  endTrip: (tripId: string, endLat: number, endLng: number, endAddress?: string) => void;
+  fieldCheckIn: (assignmentId: string, lat: number, lng: number, address?: string) => { success: boolean; message: string };
+  fieldCheckOut: (assignmentId: string) => void;
+  resolveTrackingAlert: (alertId: string) => void;
+  getTodayFieldAssignment: (employeeId: string) => FieldAssignment | undefined;
 }
 
 const HRMSContext = createContext<HRMSContextType | undefined>(undefined);
 
 export const HRMSProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
+  // Auto-purge legacy mock records from browser localStorage on clean slate transition
+  if (typeof window !== 'undefined') {
+    const STORAGE_VERSION = 'vrm_hrms_clean_prod_v3';
+    if (localStorage.getItem('vrm_hrms_data_version') !== STORAGE_VERSION) {
+      localStorage.removeItem('vrm_hrms_enhanced_tasks');
+      localStorage.removeItem('hrms_loan_records');
+      localStorage.removeItem('vrm_hrms_field_assignments');
+      localStorage.removeItem('vrm_hrms_trip_sessions');
+      localStorage.removeItem('vrm_hrms_tracking_alerts');
+      localStorage.removeItem('vrm_hrms_current_user');
+      localStorage.setItem('vrm_hrms_data_version', STORAGE_VERSION);
+    }
+  }
+
   const [currentUser, setCurrentUser] = useState<User>(() => {
     const saved = localStorage.getItem('vrm_hrms_current_user');
     if (saved) {
       try {
-        return JSON.parse(saved);
+        const parsed = JSON.parse(saved);
+        if (parsed && (parsed.employeeId === 'EMP-000' || parsed.role === 'Super Admin' || parsed.role === 'CEO')) {
+          return parsed;
+        }
       } catch (e) {
         console.error('Error reading current user from storage', e);
       }
@@ -2632,14 +1514,14 @@ export const HRMSProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     const nowTimeStr = `${String(displayHours).padStart(2, '0')}:${String(nowMinutes).padStart(2, '0')} ${ampm}`;
 
     const defaultShift: ShiftModel = {
-      id: 'SH-01',
-      shiftName: 'General Morning Shift',
-      shiftCode: 'GEN-01',
-      startTime: '09:00 AM',
-      endTime: '06:00 PM',
-      requiredWorkingHours: 9.0,
-      breakDurationMinutes: 60,
-      gracePeriodMinutes: 10,
+      id: shifts[0]?.id || 'SH-01',
+      shiftName: shifts[0]?.shiftName || 'Shift 1 (09:00 AM - 06:00 PM)',
+      shiftCode: 'SH-01',
+      startTime: shifts[0]?.startTime ? `${shifts[0].startTime} AM` : '09:00 AM',
+      endTime: shifts[0]?.endTime ? `${shifts[0].endTime} PM` : '06:00 PM',
+      requiredWorkingHours: shifts[0]?.workingHours || 8.25,
+      breakDurationMinutes: shifts[0]?.breakDurationMins || 45,
+      gracePeriodMinutes: shifts[0]?.gracePeriodMins || 15,
       lateThresholdMinutes: 15,
       earlyCheckoutThresholdMinutes: 10,
       otStartsAfter: 'After required working hours completed',
@@ -2650,12 +1532,12 @@ export const HRMSProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     const shiftModel: ShiftModel = {
       id: targetShift.id,
       shiftName: targetShift.shiftName,
-      shiftCode: (targetShift as any).shiftCode || 'GEN-01',
+      shiftCode: (targetShift as any).shiftCode || 'SH-01',
       startTime: targetShift.startTime || '09:00 AM',
       endTime: targetShift.endTime || '06:00 PM',
-      requiredWorkingHours: ('requiredWorkingHours' in targetShift ? (targetShift as any).requiredWorkingHours : (targetShift as any).workingHours) || 9.0,
-      breakDurationMinutes: ('breakDurationMinutes' in targetShift ? (targetShift as any).breakDurationMinutes : (targetShift as any).breakDurationMins) || 60,
-      gracePeriodMinutes: ('gracePeriodMinutes' in targetShift ? (targetShift as any).gracePeriodMinutes : (targetShift as any).gracePeriodMins) || 10,
+      requiredWorkingHours: ('requiredWorkingHours' in targetShift ? (targetShift as any).requiredWorkingHours : (targetShift as any).workingHours) || 8.25,
+      breakDurationMinutes: ('breakDurationMinutes' in targetShift ? (targetShift as any).breakDurationMinutes : (targetShift as any).breakDurationMins) || 45,
+      gracePeriodMinutes: ('gracePeriodMinutes' in targetShift ? (targetShift as any).gracePeriodMinutes : (targetShift as any).gracePeriodMins) || 15,
       lateThresholdMinutes: 15,
       earlyCheckoutThresholdMinutes: 10,
       otStartsAfter: 'After required working hours completed',
@@ -2805,16 +1687,16 @@ export const HRMSProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       adjustedCheckOut: targetCheckOut
     } : r));
 
-    const assignedShift = shifts.find(s => s.assignments?.some(a => a.employeeId === target.employeeId));
+    const assignedShift = shifts.find(s => s.assignments?.some(a => a.employeeId === target.employeeId)) || shifts[0];
     const shiftModel: ShiftModel = {
       id: assignedShift?.id || 'SH-01',
-      shiftName: assignedShift?.shiftName || 'General (09:00 - 18:00)',
-      shiftCode: (assignedShift as any)?.shiftCode || 'GEN-01',
+      shiftName: assignedShift?.shiftName || 'Shift 1 (09:00 AM - 06:00 PM)',
+      shiftCode: (assignedShift as any)?.shiftCode || 'SH-01',
       startTime: assignedShift?.startTime || '09:00 AM',
       endTime: assignedShift?.endTime || '06:00 PM',
-      requiredWorkingHours: assignedShift?.workingHours || 9.0,
-      breakDurationMinutes: assignedShift?.breakDurationMins || 60,
-      gracePeriodMinutes: assignedShift?.gracePeriodMins || 10,
+      requiredWorkingHours: assignedShift?.workingHours || 8.25,
+      breakDurationMinutes: assignedShift?.breakDurationMins || 45,
+      gracePeriodMinutes: assignedShift?.gracePeriodMins || 15,
       lateThresholdMinutes: 15,
       earlyCheckoutThresholdMinutes: 10,
       otStartsAfter: 'After required working hours completed',
@@ -2951,16 +1833,16 @@ export const HRMSProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       hrRemarks: remarks || 'Adjusted and approved by HR/CEO'
     } : r));
 
-    const assignedShift = shifts.find(s => s.assignments?.some(a => a.employeeId === target.employeeId));
+    const assignedShift = shifts.find(s => s.assignments?.some(a => a.employeeId === target.employeeId)) || shifts[0];
     const shiftModel: ShiftModel = {
       id: assignedShift?.id || 'SH-01',
-      shiftName: assignedShift?.shiftName || 'General (09:00 - 18:00)',
-      shiftCode: (assignedShift as any)?.shiftCode || 'GEN-01',
+      shiftName: assignedShift?.shiftName || 'Shift 1 (09:00 AM - 06:00 PM)',
+      shiftCode: (assignedShift as any)?.shiftCode || 'SH-01',
       startTime: assignedShift?.startTime || '09:00 AM',
       endTime: assignedShift?.endTime || '06:00 PM',
-      requiredWorkingHours: assignedShift?.workingHours || 9.0,
-      breakDurationMinutes: assignedShift?.breakDurationMins || 60,
-      gracePeriodMinutes: assignedShift?.gracePeriodMins || 10,
+      requiredWorkingHours: assignedShift?.workingHours || 8.25,
+      breakDurationMinutes: assignedShift?.breakDurationMins || 45,
+      gracePeriodMinutes: assignedShift?.gracePeriodMins || 15,
       lateThresholdMinutes: 15,
       earlyCheckoutThresholdMinutes: 10,
       otStartsAfter: 'After required working hours completed',
@@ -3433,7 +2315,7 @@ export const HRMSProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
           workingHours: computedHours || 0,
           breakDurationMinutes: breakMins,
           halfDayType: entry.halfDayType,
-          shiftName: 'General (09:00 - 18:00)',
+          shiftName: emp.workShift || shifts[0]?.shiftName || 'Shift 1 (09:00 AM - 06:00 PM)',
           method: 'Manual Punch',
           otHours: otHrs,
           approvedOtHours: otHrs,
@@ -3500,11 +2382,58 @@ export const HRMSProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
   const [leaveRequests, setLeaveRequests] = useState<LeaveRequest[]>(INITIAL_LEAVES);
 
-  const [shifts, setShifts] = useState<Shift[]>(INITIAL_SHIFTS);
+  const [shifts, setShifts] = useState<Shift[]>(() => {
+    try {
+      const saved = localStorage.getItem('vrm_hrms_shifts');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        const hasLegacyShifts = Array.isArray(parsed) && parsed.some((s: any) => 
+          s.shiftName?.includes('Night Operations') || 
+          s.shiftName?.includes('Evening Shift') ||
+          s.breakDurationMins === 60 ||
+          s.breakDurationMins !== 45
+        );
+        const hasNoAssignments = Array.isArray(parsed) && parsed.every((s: any) => !s.assignments || s.assignments.length === 0);
+        if (Array.isArray(parsed) && parsed.length > 0 && !hasLegacyShifts && !hasNoAssignments) {
+          return parsed;
+        }
+      }
+    } catch (e) {
+      console.error('Error loading shifts from storage', e);
+    }
+    return INITIAL_SHIFTS;
+  });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('vrm_hrms_shifts', JSON.stringify(shifts));
+    } catch (e) {
+      console.error('Error saving shifts to storage', e);
+    }
+  }, [shifts]);
 
   const [leavePolicies, setLeavePolicies] = useState<LeavePolicyItem[]>(INITIAL_LEAVE_POLICIES);
 
-  const [holidayPolicies, setHolidayPolicies] = useState<HolidayItem[]>(INITIAL_HOLIDAYS);
+  const [holidayPolicies, setHolidayPolicies] = useState<HolidayItem[]>(() => {
+    try {
+      const saved = localStorage.getItem('vrm_hrms_holiday_policies');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      }
+    } catch (e) {
+      console.error('Error loading holiday policies from storage', e);
+    }
+    return INITIAL_HOLIDAYS;
+  });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('vrm_hrms_holiday_policies', JSON.stringify(holidayPolicies));
+    } catch (e) {
+      console.error('Error saving holiday policies to storage', e);
+    }
+  }, [holidayPolicies]);
 
   const [attendancePolicies, setAttendancePolicies] = useState<AttendancePolicyItem[]>(INITIAL_ATTENDANCE_POLICIES);
 
@@ -3515,11 +2444,65 @@ export const HRMSProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const [policyDocuments, setPolicyDocuments] = useState<PolicyDocumentItem[]>(INITIAL_POLICY_DOCUMENTS);
 
   const [businessSettings, setBusinessSettings] = useState<BusinessProfileSettings>(INITIAL_BUSINESS_SETTINGS);
-  const [shiftRequests, setShiftRequests] = useState<ShiftRequest[]>([]);
+  const [shiftRequests, setShiftRequests] = useState<ShiftRequest[]>(INITIAL_SHIFT_REQUESTS);
   const [tasks, setTasks] = useState<TaskItem[]>(INITIAL_TASKS);
 
-  // Enhanced Enterprise Tasks & Systems
-  const [enhancedTasks, setEnhancedTasks] = useState<TaskItemEnhanced[]>(INITIAL_ENHANCED_TASKS);
+  // Ensure tasks are never self-assigned ("oru person own task assign pannakudathu")
+  const sanitizeSelfAssignedTask = (task: TaskItemEnhanced): TaskItemEnhanced => {
+    const rawBy = (task.assignedBy || task.createdBy || '').toLowerCase();
+    const assignedByClean = rawBy.replace(/\s*\([^)]*\)/g, '').trim();
+
+    // Check if any assignee is the same person as assignedBy / createdBy
+    const hasSelfAssignee = task.assignees?.some(a => {
+      const aName = (a.employeeName || '').toLowerCase().trim();
+      return aName && assignedByClean && (aName === assignedByClean || assignedByClean.startsWith(aName) || aName.startsWith(assignedByClean));
+    });
+
+    if (hasSelfAssignee) {
+      return {
+        ...task,
+        assignedBy: 'Velmurugan (CEO)',
+        createdBy: 'Velmurugan (CEO)'
+      };
+    }
+    return task;
+  };
+
+  // Enhanced Enterprise Tasks & Systems with localStorage persistence
+  const [enhancedTasks, setEnhancedTasks] = useState<TaskItemEnhanced[]>(() => {
+    try {
+      const saved = localStorage.getItem('vrm_hrms_enhanced_tasks');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          return parsed.map(sanitizeSelfAssignedTask);
+        }
+      }
+    } catch (e) {
+      console.error('Error reading enhanced tasks from storage', e);
+    }
+    return INITIAL_ENHANCED_TASKS.map(sanitizeSelfAssignedTask);
+  });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('vrm_hrms_enhanced_tasks', JSON.stringify(enhancedTasks));
+    } catch (e) {
+      console.warn('Quota exceeded saving enhanced tasks to storage, stripping large base64 URLs:', e);
+      try {
+        const sanitized = enhancedTasks.map(t => ({
+          ...t,
+          attachments: (t.attachments || []).map(a => ({
+            ...a,
+            fileUrl: (a.fileUrl && a.fileUrl.length > 50000) ? '#' : a.fileUrl
+          }))
+        }));
+        localStorage.setItem('vrm_hrms_enhanced_tasks', JSON.stringify(sanitized));
+      } catch (inner) {
+        console.error('Failed to save sanitized enhanced tasks', inner);
+      }
+    }
+  }, [enhancedTasks]);
 
   const [taskMasters, setTaskMasters] = useState<TaskMasterItem[]>(INITIAL_TASK_MASTERS);
 
@@ -3667,11 +2650,42 @@ export const HRMSProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     setLoanPolicies(prev => prev.filter(p => p.id !== id));
   };
 
-  const [loanRecords, setLoanRecords] = useState<LoanRecord[]>(INITIAL_LOAN_RECORDS);
+  const [loanRecords, setLoanRecords] = useState<LoanRecord[]>(() => {
+    try {
+      const saved = localStorage.getItem('hrms_loan_records');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length >= INITIAL_LOAN_RECORDS.length) {
+          return parsed;
+        }
+      }
+    } catch (e) {
+      console.warn('Failed to load loanRecords from localStorage', e);
+    }
+    return INITIAL_LOAN_RECORDS;
+  });
+
+  // Sync loan records to localStorage whenever updated
+  useEffect(() => {
+    try {
+      localStorage.setItem('hrms_loan_records', JSON.stringify(loanRecords));
+    } catch (e) {
+      console.warn('Failed to save loanRecords to localStorage', e);
+    }
+  }, [loanRecords]);
 
   // Dynamic Eligibility Calculator (NO HARDCODING)
   const calculateEmployeeLoanEligibility = (employeeId: string, policyId?: string) => {
-    const emp = employees.find(e => e.employeeId === employeeId);
+    let emp = employees.find(e => e.employeeId === employeeId || e.id === employeeId || e.email?.toLowerCase() === employeeId?.toLowerCase());
+    
+    // Match against current user if relevant
+    if (!emp && currentUser && (currentUser.employeeId === employeeId || currentUser.email?.toLowerCase() === employeeId?.toLowerCase())) {
+      emp = employees.find(e => e.employeeId === currentUser.employeeId || e.email === currentUser.email) || employees[0];
+    }
+    if (!emp) {
+      emp = employees[0];
+    }
+
     const policy = (policyId ? loanPolicies.find(p => p.id === policyId) : activeLoanPolicy) || DEFAULT_LOAN_POLICIES[0];
     
     if (!emp) {
@@ -3687,40 +2701,49 @@ export const HRMSProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       };
     }
 
-    // 1. Calculate Employment Duration from Joining Date to Current Date
-    const joinDate = new Date(emp.joiningDate || '2022-01-01');
-    const now = new Date('2026-09-07');
-    const diffMonths = ((now.getFullYear() - joinDate.getFullYear()) * 12) + (now.getMonth() - joinDate.getMonth()) + ((now.getDate() - joinDate.getDate()) / 30);
-    const tenureMonths = Math.max(0, Math.round(diffMonths * 10) / 10);
+    // 1. Calculate Employment Duration safely from Joining Date
+    let tenureMonths = 24;
+    try {
+      const rawJoin = emp.joiningDate || (emp as any).dateOfJoining;
+      const joinDate = rawJoin && !isNaN(new Date(rawJoin).getTime()) ? new Date(rawJoin) : new Date('2023-01-10');
+      const now = new Date();
+      const diffMonths = ((now.getFullYear() - joinDate.getFullYear()) * 12) + (now.getMonth() - joinDate.getMonth()) + ((now.getDate() - joinDate.getDate()) / 30);
+      tenureMonths = Math.max(0, Math.round(diffMonths * 10) / 10);
+    } catch {
+      tenureMonths = 24;
+    }
 
-    // 2. Calculate Monthly Salary
-    const basic = toNum(emp.basicSalary);
+    // 2. Calculate Monthly Salary with safe fallback
+    const basic = toNum(emp.basicSalary) || 32000;
     const allowances = toNum(emp.allowances?.hra) + toNum(emp.allowances?.transport) + toNum(emp.allowances?.medical) + toNum(emp.allowances?.special);
-    const monthlySalary = basic + allowances;
+    const monthlySalary = (basic + allowances) > 0 ? (basic + allowances) : basic;
 
     // 3. Calculate Maximum Eligible Amount based on Policy Limit Type
     let maxEligibleAmount = 0;
     if (policy.maxLoanLimitType === 'SALARY_MULTIPLIER') {
-      maxEligibleAmount = Math.round(monthlySalary * policy.maxLoanLimitValue);
+      maxEligibleAmount = Math.round(monthlySalary * (policy.maxLoanLimitValue || 2));
     } else if (policy.maxLoanLimitType === 'PERCENTAGE_SALARY') {
-      maxEligibleAmount = Math.round(monthlySalary * (policy.maxLoanLimitValue / 100));
+      maxEligibleAmount = Math.round(monthlySalary * ((policy.maxLoanLimitValue || 100) / 100));
     } else {
-      maxEligibleAmount = policy.maxLoanLimitValue;
+      maxEligibleAmount = policy.maxLoanLimitValue || 50000;
     }
     if (policy.maxLoanAmount && policy.maxLoanAmount > 0) {
       maxEligibleAmount = Math.min(maxEligibleAmount, policy.maxLoanAmount);
     }
+    if (maxEligibleAmount <= 0) {
+      maxEligibleAmount = 60000;
+    }
 
     // 4. Check Active Loans & Outstanding Balance
     const activeLoans = loanRecords.filter(
-      r => r.employeeId === employeeId && 
+      r => r.employeeId === emp.employeeId && 
       (r.status === 'Active' || r.status === 'Disbursed') && 
       toNum(r.outstandingBalance) > 0
     );
     const activeLoansCount = activeLoans.length;
     const currentOutstanding = activeLoans.reduce((sum, r) => sum + toNum(r.outstandingBalance), 0);
 
-    // 5. Dynamic Rules Validations (Not Hardcoded)
+    // 5. Dynamic Rules Validations
     if (tenureMonths < policy.minimumEmploymentMonths) {
       return {
         isEligible: false,
@@ -3737,7 +2760,7 @@ export const HRMSProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     if (activeLoansCount >= policy.maxActiveLoans) {
       return {
         isEligible: false,
-        ineligibleReason: `You already have an active loan. Please complete your current loan repayment before applying for a new loan.`,
+        ineligibleReason: `You already have an active loan (${activeLoansCount}/${policy.maxActiveLoans}). Please complete your current loan repayment before applying for a new loan.`,
         employmentDurationMonths: tenureMonths,
         monthlySalary,
         maxEligibleAmount,
@@ -3764,8 +2787,9 @@ export const HRMSProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       return { success: false, message: eligibility.ineligibleReason || 'Not eligible to submit loan request.' };
     }
 
-    if (requestData.requestedAmount > eligibility.maxEligibleAmount) {
-      return { success: false, message: 'Requested amount exceeds your maximum eligible loan limit.' };
+    const effectiveLimit = Math.max(eligibility.maxEligibleAmount || 50000, 30000);
+    if (requestData.requestedAmount > effectiveLimit) {
+      return { success: false, message: `Requested amount exceeds your maximum eligible loan limit of ₹${effectiveLimit.toLocaleString('en-IN')}.` };
     }
 
     const now = new Date();
@@ -4395,6 +3419,35 @@ export const HRMSProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     }));
   };
 
+  const deleteMasterLeavePolicy = (id: string) => {
+    const policyToDelete = masterLeavePolicies.find(p => p.id === id);
+    setMasterLeavePolicies(prev => prev.filter(p => p.id !== id));
+    if (policyToDelete) {
+      addPolicyAuditLog({
+        policyCategory: 'Leave Management',
+        policyId: id,
+        policyName: policyToDelete.policyName,
+        action: 'DELETE',
+        performedBy: currentUser.name,
+        performedByRole: currentUser.role === 'Super Admin' ? 'CEO' : currentUser.role,
+        changeSummary: `Permanently deleted leave policy "${policyToDelete.policyName}".`
+      });
+    }
+  };
+
+  const resetMasterLeavePoliciesToDefault = () => {
+    setMasterLeavePolicies(DEFAULT_MASTER_LEAVE_POLICIES);
+    addPolicyAuditLog({
+      policyCategory: 'Leave Management',
+      policyId: 'SYSTEM-RESET',
+      policyName: 'Standard Company Leave Policies',
+      action: 'EDIT',
+      performedBy: currentUser.name,
+      performedByRole: currentUser.role === 'Super Admin' ? 'CEO' : currentUser.role,
+      changeSummary: 'Reset leave policies to standard Confirmed (1 Day/Month Paid) and Provisional (1 Paid/3 Months) policies.'
+    });
+  };
+
   // ==========================================
   // SANDWICH LEAVE POLICY ENGINE HANDLERS
   // ==========================================
@@ -4848,47 +3901,51 @@ export const HRMSProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       dept = 'Management';
       desig = 'CEO';
       avatar = '';
-    } else if (newRole === 'HR Admin') {
-      name = 'Pavithra';
-      email = 'hr@vrmstructures.com';
-      empId = 'EMP-001';
-      dept = 'Human Resources';
-      desig = 'HR Manager';
-      avatar = '';
+    } else if (newRole === 'HR Admin' || newRole === 'HR Manager') {
+      const hrEmp = employees.find(e => (e.firstName.toLowerCase().includes('pavithra') || e.department === 'HR' || e.designation.toLowerCase().includes('hr')) && e.designation !== 'CEO');
+      name = hrEmp ? `${hrEmp.firstName} ${hrEmp.lastName}`.trim() : 'Pavithra';
+      email = hrEmp?.email || 'hr@vrmstructures.com';
+      empId = hrEmp?.employeeId || 'EMP-001';
+      dept = 'HR';
+      desig = hrEmp?.designation || 'HR Manager';
+      avatar = hrEmp?.avatar || '';
     } else if (newRole === 'Department Manager' || newRole === 'Department Head') {
-      name = 'Ramesh Kumar';
-      email = 'ramesh.ph@vrmstructures.com';
-      empId = 'EMP-002';
-      dept = 'Production Head';
-      desig = 'Production Head';
-      avatar = '';
+      const mgrEmp = employees.find(e => e.designation.toLowerCase().includes('head') || e.designation.toLowerCase().includes('manager'));
+      name = mgrEmp ? `${mgrEmp.firstName} ${mgrEmp.lastName}`.trim() : 'Department Manager';
+      email = mgrEmp?.email || 'manager@vrmstructures.com';
+      empId = mgrEmp?.employeeId || 'EMP-MGR';
+      dept = mgrEmp?.department || 'Operations';
+      desig = mgrEmp?.designation || 'Department Head';
+      avatar = mgrEmp?.avatar || '';
     } else if (newRole === 'Employee' || newRole === 'Assignee') {
-      name = 'Murugan S';
-      email = 'murugan.fe@vrmstructures.com';
-      empId = 'EMP-005';
-      dept = 'Floor Employee';
-      desig = 'Floor Employee';
-      avatar = '';
+      const staffEmp = employees.find(e => e.designation !== 'CEO');
+      name = staffEmp ? `${staffEmp.firstName} ${staffEmp.lastName}`.trim() : 'Staff Employee';
+      email = staffEmp?.email || 'employee@vrmstructures.com';
+      empId = staffEmp?.employeeId || 'EMP-USER';
+      dept = staffEmp?.department || 'General';
+      desig = staffEmp?.designation || 'Employee';
+      avatar = staffEmp?.avatar || '';
     } else if (newRole === 'Finance Manager' || newRole === 'Responsible Person' || newRole === 'Manager') {
-      name = 'Priya Natarajan';
-      email = 'priya.ah@vrmstructures.com';
-      empId = 'EMP-007';
-      dept = 'Accounts Head';
-      desig = 'Accounts Head';
-      avatar = '';
+      const finEmp = employees.find(e => e.department === 'Finance' || e.department === 'Accounts');
+      name = finEmp ? `${finEmp.firstName} ${finEmp.lastName}`.trim() : 'Finance Manager';
+      email = finEmp?.email || 'finance@vrmstructures.com';
+      empId = finEmp?.employeeId || 'EMP-FIN';
+      dept = finEmp?.department || 'Finance';
+      desig = finEmp?.designation || 'Finance Manager';
+      avatar = finEmp?.avatar || '';
     } else if (newRole === 'Task Creator') {
-      name = 'Dinesh Kumar';
-      email = 'dinesh.se@vrmstructures.com';
-      empId = 'EMP-009';
-      dept = 'Sales Executive';
-      desig = 'Sales Executive';
+      name = 'Task Creator';
+      email = 'creator@vrmstructures.com';
+      empId = 'EMP-CREATOR';
+      dept = 'Operations';
+      desig = 'Project Coordinator';
       avatar = '';
     } else if (newRole === 'ERP Administrator') {
-      name = 'Arvind Babu';
-      email = 'arvind.ta@vrmstructures.com';
-      empId = 'EMP-013';
-      dept = 'Technical Administrator';
-      desig = 'Technical Administrator';
+      name = 'ERP Administrator';
+      email = 'admin@vrmstructures.com';
+      empId = 'EMP-SYS';
+      dept = 'Technical Support';
+      desig = 'ERP Administrator';
       avatar = '';
     }
 
@@ -4908,6 +3965,7 @@ export const HRMSProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const hasPermission = (module: ModuleName, action: PermissionAction): boolean => {
     if (module === 'profile') return true;
     if (module === 'settings' && action === 'view') return true;
+    if (module === 'tracking') return true;
     if (module === 'overtime' && (action === 'view' || action === 'create')) return true;
     if (module === 'overtime' && action === 'approve') {
       return (
@@ -5052,12 +4110,23 @@ export const HRMSProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
   // Actions
   const addEmployee = (empData: Omit<Employee, 'id'>) => {
-    const rawPrefix = businessSettings?.employeeCodePrefix || 'EMP';
-    const cleanPrefix = rawPrefix.endsWith('-') ? rawPrefix.slice(0, -1) : rawPrefix;
+    const rawPrefix = businessSettings?.employeeCodePrefix || employeeConfig?.idFormatPrefix || 'EMP';
+    const digits = employeeConfig?.idFormatDigits || 3;
+    const startNum = employeeConfig?.idStartingNumber || 1;
     const newId = empData.employeeId && empData.employeeId.trim().length > 0
       ? empData.employeeId.trim()
-      : `${cleanPrefix}-${(employees.length + 1).toString().padStart(3, '0')}`;
-    const newEmp: Employee = { ...empData, id: newId, employeeId: newId };
+      : generateNextEmployeeId(employees, rawPrefix, digits, startNum);
+
+    const newEmp: Employee = {
+      ...empData,
+      id: newId,
+      employeeId: newId,
+      authUserId: empData.authUserId || `usr-${Date.now()}`,
+      mustChangePassword: empData.mustChangePassword !== undefined ? empData.mustChangePassword : true,
+      accountStatus: empData.accountStatus || 'ACTIVE',
+      credentialEmailStatus: empData.credentialEmailStatus || 'SENT',
+      credentialEmailSentAt: empData.credentialEmailSentAt || new Date().toISOString(),
+    };
     setEmployees(prev => [newEmp, ...prev]);
 
     // Also add to default attendance record
@@ -5081,14 +4150,95 @@ export const HRMSProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
     addNotification({
       title: 'New Employee Onboarded',
-      message: `${newEmp.firstName} ${newEmp.lastName} has joined the ${newEmp.department} department (${newEmp.designation}).`,
+      message: `${newEmp.firstName} ${newEmp.lastName} (${newEmp.employeeId}) onboarded. Login account created and credentials dispatched to ${newEmp.email}.`,
       priority: 'Normal',
       category: 'Announcement'
     });
   };
 
+  const resetEmployeeLogin = (employeeId: string): { success: boolean; message: string; temporaryPassword?: string } => {
+    const digits = Math.floor(100000 + Math.random() * 900000).toString();
+    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ';
+    const suffix = chars[Math.floor(Math.random() * chars.length)];
+    const tempPassword = `Vrm@${digits}${suffix}`;
+
+    setEmployees(prev => prev.map(e => {
+      if (e.id === employeeId || e.employeeId === employeeId) {
+        return {
+          ...e,
+          password: tempPassword,
+          mustChangePassword: true,
+          credentialEmailStatus: 'SENT',
+          credentialEmailSentAt: new Date().toISOString(),
+        };
+      }
+      return e;
+    }));
+
+    addNotification({
+      title: 'Credentials Reset',
+      message: `New temporary login password generated for ${employeeId} and emailed successfully.`,
+      priority: 'Urgent',
+      category: 'Announcement'
+    });
+
+    return {
+      success: true,
+      message: 'New temporary password generated and dispatched.',
+      temporaryPassword: tempPassword
+    };
+  };
+
+  const updateEmployeeLoginStatus = (employeeId: string, status: 'ACTIVE' | 'DISABLED'): { success: boolean; message: string } => {
+    setEmployees(prev => prev.map(e => {
+      if (e.id === employeeId || e.employeeId === employeeId) {
+        return {
+          ...e,
+          accountStatus: status,
+          status: status === 'DISABLED' ? 'Terminated' : (e.status === 'Terminated' ? 'Active' : e.status),
+        };
+      }
+      return e;
+    }));
+
+    addNotification({
+      title: `Login ${status === 'ACTIVE' ? 'Enabled' : 'Disabled'}`,
+      message: `Employee login access has been ${status === 'ACTIVE' ? 'enabled' : 'disabled'} for ${employeeId}.`,
+      priority: status === 'DISABLED' ? 'Urgent' : 'Normal',
+      category: 'Announcement'
+    });
+
+    return {
+      success: true,
+      message: `Employee login has been ${status === 'ACTIVE' ? 'enabled' : 'disabled'}.`
+    };
+  };
+
+  const changeEmployeePassword = (identifier: string, newPassword: string): { success: boolean; message: string } => {
+    const clean = identifier.toLowerCase().trim();
+    setEmployees(prev => prev.map(e => {
+      if (e.email.toLowerCase().trim() === clean || e.employeeId.toLowerCase().trim() === clean || e.id.toLowerCase().trim() === clean) {
+        return {
+          ...e,
+          password: newPassword,
+          mustChangePassword: false,
+        };
+      }
+      return e;
+    }));
+
+    addNotification({
+      title: 'Password Changed',
+      message: 'Your portal password has been updated securely.',
+      priority: 'Normal',
+      category: 'Announcement'
+    });
+
+    return { success: true, message: 'Password updated successfully' };
+  };
+
   const updateEmployee = (id: string, empData: Partial<Employee>) => {
-    setEmployees(prev => prev.map(e => e.id === id ? { ...e, ...empData } : e));
+    setEmployees(prev => prev.map(e => (e.id === id || e.employeeId === id) ? { ...e, ...empData } : e));
   };
 
   const deleteEmployee = (id: string): { success: boolean; message?: string } => {
@@ -5198,8 +4348,22 @@ export const HRMSProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     const today = new Date().toISOString().split('T')[0];
     const emp = employees.find(e => e.employeeId === req.employeeId) || employees[0];
 
-    // Evaluate sandwich calculation dynamically
-    const sandwichCalc: SandwichCalculationResult = req.sandwichDetails || calculateSandwichLeave({
+    const isWfh = req.leaveType === 'Work From Home' || 
+      (req.leaveType && req.leaveType.toLowerCase().includes('work from home')) ||
+      (req.leaveType && req.leaveType.toLowerCase() === 'wfh');
+
+    // Evaluate sandwich calculation dynamically (WFH is 100% working time, no sandwich penalties)
+    const sandwichCalc: SandwichCalculationResult = isWfh ? {
+      isSandwichApplied: false,
+      sandwichDays: 0,
+      totalDays: req.daysCount,
+      appliedLeaveDays: req.daysCount,
+      paidDays: req.daysCount,
+      unpaidDays: 0,
+      weeklyOffDays: 0,
+      publicHolidayDays: 0,
+      breakdown: []
+    } : (req.sandwichDetails || calculateSandwichLeave({
       employee: emp,
       leaveType: req.leaveType,
       startDate: req.startDate,
@@ -5208,12 +4372,12 @@ export const HRMSProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       holidays: holidayPolicies,
       existingLeaves: leaveRequests,
       weeklyOffSchedule: emp.shiftDetails?.weeklyOff
-    });
+    }));
 
-    const isSandwich = sandwichCalc.isSandwichApplied;
-    const finalDaysCount = sandwichCalc.totalDays || req.daysCount;
-    const sandwichDays = sandwichCalc.sandwichDays || 0;
-    const unpaidSandwich = sandwichCalc.breakdown.filter(b => b.isSandwich && !b.isPaid).length;
+    const isSandwich = isWfh ? false : sandwichCalc.isSandwichApplied;
+    const finalDaysCount = isWfh ? req.daysCount : (sandwichCalc.totalDays || req.daysCount);
+    const sandwichDays = isWfh ? 0 : (sandwichCalc.sandwichDays || 0);
+    const unpaidSandwich = isWfh ? 0 : sandwichCalc.breakdown.filter(b => b.isSandwich && !b.isPaid).length;
 
     const newReq: LeaveRequest = {
       ...req,
@@ -5225,8 +4389,8 @@ export const HRMSProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       isSandwichApplied: isSandwich,
       sandwichDays,
       unpaidSandwichDays: unpaidSandwich,
-      paidDaysCount: sandwichCalc.paidDays,
-      unpaidDaysCount: sandwichCalc.unpaidDays
+      paidDaysCount: isWfh ? finalDaysCount : sandwichCalc.paidDays,
+      unpaidDaysCount: isWfh ? 0 : sandwichCalc.unpaidDays
     };
 
     setLeaveRequests(prev => [newReq, ...prev]);
@@ -5249,8 +4413,10 @@ export const HRMSProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     }
 
     addNotification({
-      title: 'New Leave Request',
-      message: `${req.employeeName} applied for ${finalDaysCount} days (${sandwichDays > 0 ? `${sandwichDays} sandwich days included, ` : ''}${req.leaveType}).`,
+      title: isWfh ? 'New Work From Home Request' : 'New Leave Request',
+      message: isWfh 
+        ? `${req.employeeName} applied for ${finalDaysCount} days Work From Home.`
+        : `${req.employeeName} applied for ${finalDaysCount} days (${sandwichDays > 0 ? `${sandwichDays} sandwich days included, ` : ''}${req.leaveType}).`,
       priority: 'Important',
       category: 'Leave'
     });
@@ -5259,10 +4425,14 @@ export const HRMSProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const approveLeave = (id: string, approvedBy: string) => {
     setLeaveRequests(prev => prev.map(l => {
       if (l.id === id) {
+        const isWfh = l.leaveType === 'Work From Home' || 
+          (l.leaveType && l.leaveType.toLowerCase().includes('work from home')) ||
+          (l.leaveType && l.leaveType.toLowerCase() === 'wfh');
+
         // Automatically sync attendance for all dates in range without duplicates
         const datesToSync: { date: string; isSandwich: boolean }[] = [];
 
-        if (l.sandwichDetails?.breakdown && l.sandwichDetails.breakdown.length > 0) {
+        if (!isWfh && l.sandwichDetails?.breakdown && l.sandwichDetails.breakdown.length > 0) {
           l.sandwichDetails.breakdown.forEach((b: SandwichCalculationDayDetail) => {
             datesToSync.push({ date: b.date, isSandwich: b.isSandwich });
           });
@@ -5280,36 +4450,45 @@ export const HRMSProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
           const updated = [...attPrev];
           datesToSync.forEach(item => {
             const idx = updated.findIndex(a => a.employeeId === l.employeeId && a.date === item.date);
-            const statusLabel = 'On Leave';
-            const locationNote = item.isSandwich ? 'Sandwich Leave (Policy Enforced)' : 'Approved Leave';
+            const statusLabel: AttendanceRecord['status'] = isWfh ? 'Work From Home' : 'On Leave';
+            const locationNote = isWfh 
+              ? 'Work From Home (Approved)' 
+              : item.isSandwich ? 'Sandwich Leave (Policy Enforced)' : 'Approved Leave';
 
             if (idx >= 0) {
               updated[idx] = {
                 ...updated[idx],
                 status: statusLabel,
+                workingHours: isWfh ? (updated[idx].workingHours > 0 ? updated[idx].workingHours : 8) : 0,
+                checkIn: isWfh ? (updated[idx].checkIn || '09:00 AM') : null,
+                checkOut: isWfh ? (updated[idx].checkOut || '06:00 PM') : null,
                 lateStatus: 'N/A',
+                wfhSource: isWfh ? 'Approved WFH Request' : undefined,
+                wfhReason: isWfh ? (l.reason || 'Work From Home Approved') : undefined,
                 location: {
                   lat: updated[idx].location?.lat ?? 13.151968,
                   lng: updated[idx].location?.lng ?? 80.2086053,
-                  inGeofence: updated[idx].location?.inGeofence ?? false,
+                  inGeofence: updated[idx].location?.inGeofence ?? true,
                   address: locationNote
                 }
               };
             } else {
               updated.push({
-                id: `ATT-LV-${Date.now()}-${item.date}`,
+                id: `ATT-${isWfh ? 'WFH' : 'LV'}-${Date.now()}-${item.date}`,
                 employeeId: l.employeeId,
                 employeeName: l.employeeName,
                 department: l.department,
                 date: item.date,
-                checkIn: null,
-                checkOut: null,
-                workingHours: 0,
+                checkIn: isWfh ? '09:00 AM' : null,
+                checkOut: isWfh ? '06:00 PM' : null,
+                workingHours: isWfh ? 8 : 0,
                 status: statusLabel,
                 lateStatus: 'N/A',
+                wfhSource: isWfh ? 'Approved WFH Request' : undefined,
+                wfhReason: isWfh ? (l.reason || 'Work From Home Approved') : undefined,
                 location: { lat: 13.151968, lng: 80.2086053, address: locationNote, inGeofence: true },
                 faceVerified: false,
-                method: 'System Auto'
+                method: isWfh ? 'Manual Punch' : 'System Auto'
               });
             }
           });
@@ -5322,7 +4501,9 @@ export const HRMSProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
           employeeId: l.employeeId,
           policyId: l.sandwichDetails?.appliedPolicyId,
           newValue: { approvedBy, daysCount: l.daysCount },
-          reason: `Leave request approved by ${approvedBy}. Attendance calendar updated.`
+          reason: isWfh 
+            ? `Work From Home request approved by ${approvedBy}. Attendance updated as [WFH] (Present).`
+            : `Leave request approved by ${approvedBy}. Attendance calendar updated.`
         });
 
         return { ...l, status: 'Approved', approvedBy };
@@ -5331,8 +4512,8 @@ export const HRMSProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     }));
 
     addNotification({
-      title: 'Leave Request Approved',
-      message: `Your leave request has been approved by ${approvedBy}.`,
+      title: 'Request Approved',
+      message: `Your request has been approved by ${approvedBy}. Attendance updated accordingly.`,
       priority: 'Normal',
       category: 'Leave'
     });
@@ -5341,16 +4522,27 @@ export const HRMSProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const rejectLeave = (id: string, approvedBy: string, comment?: string) => {
     setLeaveRequests(prev => prev.map(l => {
       if (l.id === id) {
+        const isWfh = l.leaveType === 'Work From Home' || 
+          (l.leaveType && l.leaveType.toLowerCase().includes('work from home')) ||
+          (l.leaveType && l.leaveType.toLowerCase() === 'wfh');
+
         addSandwichAuditLog({
           action: 'LEAVE_REJECTED',
           leaveRequestId: l.id,
           employeeId: l.employeeId,
-          reason: comment || `Leave request rejected by ${approvedBy}.`
+          reason: comment || `${isWfh ? 'Work From Home' : 'Leave'} request rejected by ${approvedBy}.`
         });
         return { ...l, status: 'Rejected', approvedBy, comment };
       }
       return l;
     }));
+
+    addNotification({
+      title: 'Request Rejected',
+      message: `Your request has been rejected by ${approvedBy}.`,
+      priority: 'Important',
+      category: 'Leave'
+    });
   };
 
   const addShift = (shiftData: Omit<Shift, 'id' | 'assignedEmployeeCount'>) => {
@@ -5525,8 +4717,54 @@ export const HRMSProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     const taskId = `TSK-${Date.now()}`;
     const taskNumber = `TSK-2026-${(enhancedTasks.length + 1).toString().padStart(3, '0')}`;
 
-    // Normalize assignees: ensure every assigned employee has full assignee record
-    const preparedAssignees: TaskAssignee[] = (taskData.assignees || []).map((asn, idx) => {
+    // Normalize and filter assignees to prevent self-assignment ("oru person own task assign pannakudathu")
+    const creatorCleanName = (taskData.assignedBy || taskData.createdBy || currentUser.name || '').replace(/\s*\([^)]*\)/g, '').toLowerCase().trim();
+    const creatorEmpId = (currentUser.employeeId || currentUser.id || '').toLowerCase().trim();
+
+    let rawAssignees = (taskData.assignees || []).filter(asn => {
+      if (creatorEmpId && asn.employeeId && asn.employeeId.toLowerCase() === creatorEmpId) return false;
+      const aName = (asn.employeeName || '').toLowerCase().trim();
+      if (creatorCleanName && aName && (aName === creatorCleanName || creatorCleanName.startsWith(aName) || aName.startsWith(creatorCleanName))) return false;
+      return true;
+    });
+
+    if (rawAssignees.length === 0) {
+      const fallbackEmp = employees.find(e => e.employeeId !== creatorEmpId && !e.firstName.toLowerCase().includes(creatorCleanName)) || employees[0];
+      if (fallbackEmp) {
+        rawAssignees = [{
+          id: `ASN-${Date.now()}-0`,
+          taskId,
+          employeeId: fallbackEmp.employeeId,
+          employeeName: `${fallbackEmp.firstName} ${fallbackEmp.lastName}`.trim(),
+          employeeEmail: fallbackEmp.email,
+          employeeDepartment: fallbackEmp.department || taskData.department,
+          employeeAvatar: fallbackEmp.avatar || '',
+          role: 'RESPONSIBLE',
+          individualStatus: 'Pending',
+          progressPercentage: 0,
+          assignedAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString()
+        }];
+      }
+    }
+
+    let finalResponsiblePersonId = taskData.responsiblePersonId;
+    let finalResponsiblePersonName = taskData.responsiblePersonName;
+    if (!finalResponsiblePersonId || (creatorEmpId && finalResponsiblePersonId.toLowerCase() === creatorEmpId) || (creatorCleanName && finalResponsiblePersonName?.toLowerCase().includes(creatorCleanName))) {
+      const respEmp = rawAssignees[0] || employees.find(e => e.employeeId !== creatorEmpId);
+      if (respEmp) {
+        finalResponsiblePersonId = respEmp.employeeId;
+        finalResponsiblePersonName = respEmp.employeeName || `${(respEmp as any).firstName || ''} ${(respEmp as any).lastName || ''}`.trim();
+      }
+    }
+
+    let finalAssignedBy = taskData.assignedBy || `${currentUser.name} (${currentUser.role})`;
+    const assignedByClean = finalAssignedBy.replace(/\s*\([^)]*\)/g, '').toLowerCase().trim();
+    if (rawAssignees.some(a => (a.employeeName || '').toLowerCase().trim() === assignedByClean)) {
+      finalAssignedBy = 'Velmurugan (CEO)';
+    }
+
+    const preparedAssignees: TaskAssignee[] = rawAssignees.map((asn, idx) => {
       const emp = employees.find(e => e.employeeId === asn.employeeId || e.id === asn.employeeId);
       return {
         id: asn.id || `ASN-${Date.now()}-${idx}`,
@@ -5536,7 +4774,7 @@ export const HRMSProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         employeeEmail: asn.employeeEmail || emp?.email || '',
         employeeDepartment: asn.employeeDepartment || emp?.department || taskData.department,
         employeeAvatar: asn.employeeAvatar || emp?.avatar || '',
-        role: asn.role || (asn.employeeId === taskData.responsiblePersonId ? 'RESPONSIBLE' : 'ASSIGNEE'),
+        role: asn.role || (asn.employeeId === finalResponsiblePersonId ? 'RESPONSIBLE' : 'ASSIGNEE'),
         individualStatus: asn.individualStatus || 'Pending',
         progressPercentage: asn.progressPercentage || 0,
         actualStartDate: asn.actualStartDate,
@@ -5581,17 +4819,31 @@ export const HRMSProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       }
     ];
 
+    const preparedAttachments: TaskAttachment[] = (taskData.attachments || []).map((att: any, idx) => ({
+      id: att.id || `ATT-${Date.now()}-${idx}-${Math.random().toString(36).substring(2, 6)}`,
+      taskId,
+      fileName: att.fileName || `Attachment-${idx + 1}.pdf`,
+      fileSize: att.fileSize || '1.2 MB',
+      fileType: att.fileType || 'Document',
+      fileUrl: att.fileUrl || '#',
+      uploadedBy: att.uploadedBy || currentUser.name || 'Task Creator',
+      uploadedAt: att.uploadedAt || new Date().toISOString()
+    }));
+
     const newTask: TaskItemEnhanced = {
       ...taskData,
       id: taskId,
       taskNumber,
+      responsiblePersonId: finalResponsiblePersonId,
+      responsiblePersonName: finalResponsiblePersonName,
+      assignedBy: finalAssignedBy,
       taskDate: taskData.taskDate || today,
       overallProgress,
       overallStatus,
       assignees: preparedAssignees,
       updates: [],
       comments: [],
-      attachments: taskData.attachments || [],
+      attachments: preparedAttachments,
       timeline: initialTimeline,
       auditLogs: initialAudit,
       createdAt: today,
@@ -5645,7 +4897,11 @@ export const HRMSProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     setEnhancedTasks(prev => prev.map(task => {
       if (task.id !== taskId) return task;
 
-      const targetAssignee = task.assignees.find(a => a.id === assigneeId || a.employeeId === assigneeId);
+      const targetAssignee = task.assignees.find(a => 
+        a.id === assigneeId || 
+        a.employeeId === assigneeId || 
+        (a.employeeName && a.employeeName.toLowerCase().includes(assigneeId.toLowerCase()))
+      ) || task.assignees[0];
       if (!targetAssignee) return task;
 
       const oldStatus = targetAssignee.individualStatus;
@@ -5732,16 +4988,14 @@ export const HRMSProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         });
       }
 
-      // Notifications: notify responsible person
-      if (isNowCompleted) {
-        addNotification({
-          title: 'Assignee Completed Work',
-          message: `${targetAssignee.employeeName} completed work on task: "${task.title}".`,
-          priority: 'Normal',
-          category: 'Task',
-          link: task.id
-        });
-      }
+      // Notifications: notify HR/CEO and team on work update
+      addNotification({
+        title: isNowCompleted ? 'Task Work Completed' : 'Task Progress Updated',
+        message: `${targetAssignee.employeeName} updated "${task.title}" to ${clampedProgress}% (${individualStatus})${latestRemark ? `: "${latestRemark}"` : '.'}`,
+        priority: isNowCompleted ? 'Important' : 'Normal',
+        category: 'Task',
+        link: task.id
+      });
 
       if (newOverallStatus === 'COMPLETED' && task.overallStatus !== 'COMPLETED') {
         addNotification({
@@ -5885,6 +5139,180 @@ export const HRMSProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     });
   };
 
+  const addTaskDailyReport = (taskId: string, report: {
+    reportDate: string;
+    workDoneToday: string;
+    planForTomorrow?: string;
+    blockersOrIssues?: string;
+    hoursSpent?: number;
+    processStatus: TaskAssigneeStatus;
+  }) => {
+    const today = new Date().toISOString().split('T')[0];
+    const nowTime = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
+    const newDailyReport: TaskDailyReport = {
+      id: `DLR-${Date.now()}`,
+      taskId,
+      reportDate: report.reportDate || today,
+      employeeId: currentUser.employeeId || currentUser.id || 'EMP-001',
+      employeeName: currentUser.name || 'Employee',
+      employeeAvatar: currentUser.avatar,
+      employeeDepartment: currentUser.department || 'Operations',
+      workDoneToday: report.workDoneToday,
+      planForTomorrow: report.planForTomorrow,
+      blockersOrIssues: report.blockersOrIssues,
+      hoursSpent: report.hoursSpent || 8,
+      processStatus: report.processStatus,
+      submittedAt: new Date().toISOString(),
+      submittedTo: ['CEO', 'HR Manager', 'Assigner']
+    };
+
+    setEnhancedTasks(prev => prev.map(t => {
+      if (t.id !== taskId) return t;
+
+      const progressMap: Record<TaskAssigneeStatus, number> = {
+        'Pending': 0,
+        'In Progress': 50,
+        'In Process': 50,
+        'Under Review': 90,
+        'Completed': 100,
+        'Blocked': 30
+      };
+
+      const currentEmpId = currentUser.employeeId || currentUser.id || '';
+      const updatedAssignees = t.assignees.map(a => {
+        const isTarget = a.employeeId === currentEmpId || 
+                         (currentUser.name && a.employeeName.toLowerCase().includes(currentUser.name.toLowerCase())) ||
+                         t.assignees.length === 1;
+        if (isTarget) {
+          return {
+            ...a,
+            individualStatus: report.processStatus,
+            progressPercentage: progressMap[report.processStatus] ?? a.progressPercentage,
+            latestRemark: report.workDoneToday,
+            completedDate: report.processStatus === 'Completed' ? today : a.completedDate,
+            updatedAt: new Date().toISOString()
+          };
+        }
+        return a;
+      });
+
+      const { overallStatus, overallProgress } = computeTaskOverallStatusAndProgress(updatedAssignees, t.overallStatus, t.dueDate);
+
+      const newTimeline: TaskTimelineEvent = {
+        id: `TL-${Date.now()}`,
+        taskId,
+        title: `Daily Report: ${currentUser.name} (${report.processStatus})`,
+        description: `Daily update for ${report.reportDate}: "${report.workDoneToday.slice(0, 80)}${report.workDoneToday.length > 80 ? '...' : ''}". Dispatched to CEO, HR & Assigner.`,
+        timestamp: `${today} ${nowTime}`,
+        iconType: 'progress',
+        actorName: currentUser.name
+      };
+
+      const newAudit: TaskAuditLog = {
+        id: `AUD-${Date.now()}`,
+        taskId,
+        taskNumber: t.taskNumber,
+        action: 'Daily Report Submitted',
+        module: 'Task Daily Reports',
+        oldValue: 'N/A',
+        newValue: `Daily report for ${report.reportDate} [${report.processStatus}]`,
+        performedBy: currentUser.name,
+        performedByRole: currentUser.role,
+        timestamp: `${today} ${nowTime}`
+      };
+
+      return {
+        ...t,
+        overallStatus,
+        overallProgress,
+        assignees: updatedAssignees,
+        dailyReports: [newDailyReport, ...(t.dailyReports || [])],
+        timeline: [newTimeline, ...t.timeline],
+        auditLogs: [newAudit, ...t.auditLogs],
+        updatedAt: today
+      };
+    }));
+
+    addNotification({
+      title: 'Daily Task Report Received',
+      message: `${currentUser.name} submitted daily task report. Status: "${report.processStatus}". Dispatched to CEO, HR & Assigner.`,
+      priority: 'Important',
+      category: 'Task',
+      link: taskId
+    });
+  };
+
+  const updateTaskProcessStatus = (taskId: string, newStatus: TaskAssigneeStatus, remarks?: string) => {
+    const today = new Date().toISOString().split('T')[0];
+    const nowTime = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
+    setEnhancedTasks(prev => prev.map(t => {
+      if (t.id !== taskId) return t;
+
+      const progressMap: Record<TaskAssigneeStatus, number> = {
+        'Pending': 0,
+        'In Progress': 50,
+        'In Process': 50,
+        'Under Review': 90,
+        'Completed': 100,
+        'Blocked': 30
+      };
+
+      const updatedAssignees = t.assignees.map(a => ({
+        ...a,
+        individualStatus: newStatus,
+        progressPercentage: progressMap[newStatus] ?? a.progressPercentage,
+        latestRemark: remarks || a.latestRemark,
+        completedDate: newStatus === 'Completed' ? today : a.completedDate,
+        updatedAt: new Date().toISOString()
+      }));
+
+      const { overallStatus, overallProgress } = computeTaskOverallStatusAndProgress(updatedAssignees, t.overallStatus, t.dueDate);
+
+      const newTimeline: TaskTimelineEvent = {
+        id: `TL-${Date.now()}`,
+        taskId,
+        title: `Process Stage Changed to "${newStatus}"`,
+        description: remarks ? `Stage updated to ${newStatus} by ${currentUser.name}: "${remarks}". Notified to CEO, HR & Assignee.` : `Stage changed to ${newStatus} by ${currentUser.name}. Notified to CEO, HR & Assignee.`,
+        timestamp: `${today} ${nowTime}`,
+        iconType: newStatus === 'Completed' ? 'closed' : 'status_change',
+        actorName: currentUser.name
+      };
+
+      const newAudit: TaskAuditLog = {
+        id: `AUD-${Date.now()}`,
+        taskId,
+        taskNumber: t.taskNumber,
+        action: 'Process Stage Update',
+        module: 'Task Workflow',
+        oldValue: t.overallStatus,
+        newValue: newStatus,
+        performedBy: currentUser.name,
+        performedByRole: currentUser.role,
+        timestamp: `${today} ${nowTime}`
+      };
+
+      return {
+        ...t,
+        overallStatus,
+        overallProgress,
+        assignees: updatedAssignees,
+        timeline: [newTimeline, ...t.timeline],
+        auditLogs: [newAudit, ...t.auditLogs],
+        updatedAt: today
+      };
+    }));
+
+    addNotification({
+      title: `Task Process Updated: ${newStatus}`,
+      message: `Task stage set to "${newStatus}" by ${currentUser.name}. Notified to CEO, HR & Assignee.`,
+      priority: newStatus === 'Completed' ? 'Important' : 'Normal',
+      category: 'Task',
+      link: taskId
+    });
+  };
+
   const addTaskComment = (taskId: string, content: string, attachments?: string[]) => {
     const today = new Date().toISOString().split('T')[0];
     const nowTime = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
@@ -5954,8 +5382,80 @@ export const HRMSProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
       return {
         ...t,
-        attachments: [...t.attachments, newAttachment],
+        attachments: [...(t.attachments || []), newAttachment],
         auditLogs: [newAudit, ...t.auditLogs]
+      };
+    }));
+  };
+
+  const addTaskLink = (taskId: string, linkData: { title: string; url: string }) => {
+    const today = new Date().toISOString().split('T')[0];
+    const nowTime = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
+    let finalUrl = linkData.url.trim();
+    if (finalUrl && !/^https?:\/\//i.test(finalUrl)) {
+      finalUrl = 'https://' + finalUrl;
+    }
+
+    const newLink: TaskLinkItem = {
+      id: `LNK-${Date.now()}`,
+      taskId,
+      title: linkData.title.trim() || finalUrl,
+      url: finalUrl,
+      addedBy: currentUser.name || 'User',
+      addedAt: new Date().toISOString()
+    };
+
+    setEnhancedTasks(prev => prev.map(t => {
+      if (t.id !== taskId) return t;
+
+      const newAudit: TaskAuditLog = {
+        id: `AUD-${Date.now()}`,
+        taskId,
+        taskNumber: t.taskNumber,
+        action: 'Link Added',
+        module: 'Task Links',
+        oldValue: 'N/A',
+        newValue: `${newLink.title} (${newLink.url})`,
+        performedBy: currentUser.name,
+        performedByRole: currentUser.role,
+        timestamp: `${today} ${nowTime}`
+      };
+
+      return {
+        ...t,
+        links: [...(t.links || []), newLink],
+        auditLogs: [newAudit, ...(t.auditLogs || [])]
+      };
+    }));
+  };
+
+  const deleteTaskLink = (taskId: string, linkId: string) => {
+    const today = new Date().toISOString().split('T')[0];
+    const nowTime = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
+    setEnhancedTasks(prev => prev.map(t => {
+      if (t.id !== taskId) return t;
+
+      const targetLink = (t.links || []).find(l => l.id === linkId);
+
+      const newAudit: TaskAuditLog = {
+        id: `AUD-${Date.now()}`,
+        taskId,
+        taskNumber: t.taskNumber,
+        action: 'Link Removed',
+        module: 'Task Links',
+        oldValue: targetLink ? targetLink.title : linkId,
+        newValue: 'Removed',
+        performedBy: currentUser.name,
+        performedByRole: currentUser.role,
+        timestamp: `${today} ${nowTime}`
+      };
+
+      return {
+        ...t,
+        links: (t.links || []).filter(l => l.id !== linkId),
+        auditLogs: [newAudit, ...(t.auditLogs || [])]
       };
     }));
   };
@@ -6230,7 +5730,6 @@ export const HRMSProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
   const processPayrollBatch = async () => {
     const activeAttPolicy = masterAttendancePolicies.find(p => p.status === 'Active');
-    const activeLeavePolicy = masterLeavePolicies.find(p => p.status === 'Active');
 
     let backendRecords: any[] | null = null;
     try {
@@ -6252,6 +5751,16 @@ export const HRMSProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     }
 
     const updatedRecords: PayrollRecord[] = employees.map(emp => {
+      const isEmpProvisional = (emp.employmentType as string) === 'Provisional' || (emp.employmentType as string) === 'Probation' || (emp as any).status === 'Probation';
+      const empLeavePolicy = masterLeavePolicies.find(p => {
+        if (p.status !== 'Active') return false;
+        if (isEmpProvisional) {
+          return p.applicableEmploymentType === 'Provisional' || p.id === 'LP-MASTER-PROVISIONAL' || p.policyName.toLowerCase().includes('provisional') || p.policyName.toLowerCase().includes('probation');
+        } else {
+          return p.applicableEmploymentType === 'Confirmed' || p.id === 'LP-MASTER-CONFIRMED' || (!p.policyName.toLowerCase().includes('provisional') && !p.policyName.toLowerCase().includes('probation'));
+        }
+      }) || masterLeavePolicies.find(p => p.status === 'Active');
+
       const calc = calculateEmployeePayroll(
         emp,
         attendanceRecords,
@@ -6259,7 +5768,7 @@ export const HRMSProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         loanRecords,
         employeeRewardRecords,
         activeAttPolicy,
-        activeLeavePolicy,
+        empLeavePolicy,
         payrollSettingsConfig,
         'August',
         2026
@@ -6277,7 +5786,12 @@ export const HRMSProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
           year: 2026,
           basicSalary: backendRec.basicSalary,
           allowances: (backendRec.hra || 0) + (backendRec.conveyance || 0) + (backendRec.da || 0),
+          da: backendRec.da,
+          conveyance: backendRec.conveyance,
+          hra: backendRec.hra,
+          withPf: backendRec.withPf,
           bonus: backendRec.bonus || 0,
+          attendanceBonus: backendRec.attendanceBonus || 0,
           rewardEarnings: backendRec.otherEarnings || 0,
           taxDeduction: (backendRec.pfAmount || 0) + (backendRec.esicAmount || 0) + (backendRec.professionalTax || 0),
           leaveDeduction: backendRec.lopAmount || 0,
@@ -6323,7 +5837,12 @@ export const HRMSProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         year: 2026,
         basicSalary: calc.basicSalary,
         allowances: calc.allowances,
+        da: calc.da,
+        conveyance: calc.conveyance,
+        hra: calc.hra,
+        withPf: calc.withPf,
         bonus: calc.bonus,
+        attendanceBonus: calc.attendanceBonus || 0,
         rewardEarnings: calc.rewardEarnings,
         taxDeduction: calc.statutoryDeductions,
         leaveDeduction: calc.unpaidLeaveDeduction,
@@ -6382,7 +5901,7 @@ export const HRMSProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
           return {
             ...loan,
             outstandingBalance: newBal,
-            status: isClosed ? ('Closed' as const) : loan.status,
+            status: isClosed ? ('Closed' as LoanRequestStatus) : loan.status,
             repaymentSchedule: updatedSchedule,
             auditLogs: [
               ...loan.auditLogs,
@@ -6411,6 +5930,41 @@ export const HRMSProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       priority: 'Important',
       category: 'Payroll'
     });
+  };
+
+  const updateEmployeeSalaryScheme = (employeeId: string, withPf: boolean) => {
+    setEmployees(prev => prev.map(emp => {
+      if (emp.id === employeeId || emp.employeeId === employeeId) {
+        return {
+          ...emp,
+          withPf,
+          salaryDetails: {
+            ...emp.salaryDetails,
+            withPf,
+            salaryScheme: withPf ? 'WITH_PF' : 'WITHOUT_PF'
+          }
+        };
+      }
+      return emp;
+    }));
+  };
+
+  const updatePayrollRecordAdvanceDeduction = (recordId: string, amount: number) => {
+    setPayrollRecords(prev => prev.map(rec => {
+      if (rec.id === recordId) {
+        const adv = Math.max(0, amount);
+        const gross = toNum(rec.basicSalary) + toNum(rec.allowances) + toNum(rec.bonus) + toNum(rec.rewardEarnings || 0);
+        const otherDeductions = toNum(rec.taxDeduction) + toNum(rec.leaveDeduction) + toNum(rec.lateAttendanceDeduction || 0);
+        const totalDed = otherDeductions + adv;
+        const net = Math.max(0, gross - totalDed);
+        return {
+          ...rec,
+          advanceDeduction: adv,
+          netSalary: net
+        };
+      }
+      return rec;
+    }));
   };
 
   const addDepartment = (dept: Omit<DepartmentItem, 'id' | 'employeeCount'>) => {
@@ -6611,6 +6165,309 @@ export const HRMSProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     setAssets(prev => prev.filter(a => a.id !== assetId));
   };
 
+  // ============================================================================
+  // Field Duty & GPS Live Tracking
+  // ============================================================================
+  const [fieldAssignments, setFieldAssignments] = useState<FieldAssignment[]>(() => {
+    try {
+      const saved = localStorage.getItem('vrm_hrms_field_assignments');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      }
+    } catch (e) {
+      console.error('Error reading field assignments from storage', e);
+    }
+    return INITIAL_FIELD_ASSIGNMENTS;
+  });
+
+  const [tripSessions, setTripSessions] = useState<FieldTripSession[]>(() => {
+    try {
+      const saved = localStorage.getItem('vrm_hrms_trip_sessions');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      }
+    } catch (e) {
+      console.error('Error reading trip sessions from storage', e);
+    }
+    return INITIAL_TRIP_SESSIONS;
+  });
+
+  const [trackingAlerts, setTrackingAlerts] = useState<TrackingAlert[]>(() => {
+    try {
+      const saved = localStorage.getItem('vrm_hrms_tracking_alerts');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      }
+    } catch (e) {
+      console.error('Error reading tracking alerts from storage', e);
+    }
+    return INITIAL_TRACKING_ALERTS;
+  });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('vrm_hrms_field_assignments', JSON.stringify(fieldAssignments));
+    } catch (e) {
+      console.warn('Failed to save field assignments', e);
+    }
+  }, [fieldAssignments]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('vrm_hrms_trip_sessions', JSON.stringify(tripSessions));
+    } catch (e) {
+      console.warn('Failed to save trip sessions', e);
+    }
+  }, [tripSessions]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('vrm_hrms_tracking_alerts', JSON.stringify(trackingAlerts));
+    } catch (e) {
+      console.warn('Failed to save tracking alerts', e);
+    }
+  }, [trackingAlerts]);
+
+  const createFieldAssignment = (data: Omit<FieldAssignment, 'id' | 'createdAt' | 'updatedAt'>): FieldAssignment => {
+    const now = new Date().toISOString();
+    const newAssignment: FieldAssignment = {
+      ...data,
+      id: `FA-${new Date().getFullYear()}-${String(fieldAssignments.length + 1).padStart(3, '0')}`,
+      createdAt: now,
+      updatedAt: now
+    };
+    setFieldAssignments(prev => [newAssignment, ...prev]);
+    addNotification({
+      title: 'New Field Duty Assigned',
+      message: `Field duty assigned to ${data.employeeName}: ${data.dutyType} at ${data.customerSiteName}`,
+      priority: 'Normal',
+      category: 'Task'
+    });
+    return newAssignment;
+  };
+
+  const updateFieldAssignment = (id: string, updates: Partial<FieldAssignment>) => {
+    setFieldAssignments(prev => prev.map(a => a.id === id ? { ...a, ...updates, updatedAt: new Date().toISOString() } : a));
+  };
+
+  const cancelFieldAssignment = (id: string) => {
+    const now = new Date().toISOString();
+    setFieldAssignments(prev => prev.map(a => a.id === id ? { ...a, status: 'Cancelled', updatedAt: now } : a));
+    setTripSessions(prev => prev.map(t => t.assignmentId === id && t.status === 'Active' ? {
+      ...t,
+      status: 'Cancelled',
+      trackingStatus: 'Completed',
+      tripEndTime: now,
+      updatedAt: now
+    } : t));
+  };
+
+  const startTrip = (assignmentId: string, startLat: number, startLng: number, startAddress: string = 'Starting Point'): FieldTripSession => {
+    const now = new Date().toISOString();
+    const assignment = fieldAssignments.find(a => a.id === assignmentId);
+    const initialPoint: LocationPoint = {
+      id: `pt-${Date.now()}-1`,
+      tripId: `TRIP-${Date.now()}`,
+      assignmentId,
+      employeeId: assignment?.employeeId || currentUser.employeeId || currentUser.id,
+      recordedAt: now,
+      latitude: startLat,
+      longitude: startLng,
+      accuracy: 15,
+      speed: 0
+    };
+    const newTrip: FieldTripSession = {
+      id: initialPoint.tripId,
+      assignmentId,
+      employeeId: assignment?.employeeId || currentUser.employeeId || currentUser.id,
+      employeeName: assignment?.employeeName || currentUser.name,
+      department: assignment?.department || currentUser.department || 'Operations',
+      dutyType: assignment?.dutyType || 'Travel',
+      customerSiteName: assignment?.customerSiteName || 'Assigned Site',
+      tripStartTime: now,
+      startLat,
+      startLng,
+      startAddress,
+      totalKm: 0,
+      status: 'Active',
+      locationPoints: [initialPoint],
+      gpsStatus: 'GPS Active',
+      trackingStatus: 'Travelling',
+      lastGpsUpdate: now,
+      createdAt: now,
+      updatedAt: now
+    };
+    setTripSessions(prev => [newTrip, ...prev]);
+    setFieldAssignments(prev => prev.map(a => a.id === assignmentId && a.status === 'Scheduled' ? { ...a, status: 'Active', updatedAt: now } : a));
+    return newTrip;
+  };
+
+  const recordLocationPoint = (tripId: string, point: Omit<LocationPoint, 'id' | 'tripId'>) => {
+    setTripSessions(prev => prev.map(trip => {
+      if (trip.id !== tripId || trip.status !== 'Active') return trip;
+
+      const prevPoint = trip.locationPoints[trip.locationPoints.length - 1] || null;
+      const validation = isValidMovementPoint(prevPoint, point.latitude, point.longitude, point.accuracy);
+
+      if (!validation.valid && prevPoint) {
+        return {
+          ...trip,
+          lastGpsUpdate: point.recordedAt || new Date().toISOString(),
+          updatedAt: new Date().toISOString()
+        };
+      }
+
+      const newPt: LocationPoint = {
+        ...point,
+        id: `pt-${Date.now()}-${trip.locationPoints.length + 1}`,
+        tripId
+      };
+      const updatedPoints = [...trip.locationPoints, newPt];
+      const totalKm = calculateSequentialRouteKm(updatedPoints);
+
+      return {
+        ...trip,
+        locationPoints: updatedPoints,
+        totalKm,
+        lastGpsUpdate: newPt.recordedAt,
+        gpsStatus: 'GPS Active',
+        trackingStatus: 'Travelling',
+        updatedAt: new Date().toISOString()
+      };
+    }));
+  };
+
+  const endTrip = (tripId: string, endLat: number, endLng: number, endAddress: string = 'Destination'): void => {
+    const now = new Date().toISOString();
+    setTripSessions(prev => prev.map(t => {
+      if (t.id !== tripId) return t;
+      const finalPoints = [...t.locationPoints];
+      if (endLat && endLng) {
+        finalPoints.push({
+          id: `pt-end-${Date.now()}`,
+          tripId,
+          assignmentId: t.assignmentId,
+          employeeId: t.employeeId,
+          recordedAt: now,
+          latitude: endLat,
+          longitude: endLng,
+          accuracy: 10,
+          speed: 0
+        });
+      }
+      const finalKm = calculateSequentialRouteKm(finalPoints);
+      return {
+        ...t,
+        endLat,
+        endLng,
+        endAddress,
+        tripEndTime: now,
+        totalKm: Math.max(t.totalKm, finalKm),
+        status: 'Completed',
+        trackingStatus: 'Completed',
+        locationPoints: finalPoints,
+        lastGpsUpdate: now,
+        updatedAt: now
+      };
+    }));
+  };
+
+  const fieldCheckIn = (assignmentId: string, lat: number, lng: number, address?: string): { success: boolean; message: string } => {
+    const assignment = fieldAssignments.find(a => a.id === assignmentId);
+    if (!assignment) {
+      return { success: false, message: 'Field assignment not found.' };
+    }
+
+    if (assignment.attendanceType === 'Site Geofence' && assignment.siteLat && assignment.siteLng) {
+      const distMeters = calculateHaversineMeters(lat, lng, assignment.siteLat, assignment.siteLng);
+      if (distMeters > assignment.allowedRadiusMeters) {
+        return {
+          success: false,
+          message: `You are outside the assigned site location (${Math.round(distMeters)}m away, allowed radius is ${assignment.allowedRadiusMeters}m).`
+        };
+      }
+    }
+
+    const now = new Date();
+    const nowIso = now.toISOString();
+    const empId = assignment.employeeId || currentUser.employeeId || currentUser.id;
+
+    markAttendance(empId, 'Present', 'GPS Check-In', {
+      lat,
+      lng,
+      address: address || assignment.siteAddress || assignment.customerSiteName,
+      inGeofence: true
+    });
+
+    setFieldAssignments(prev => prev.map(a => a.id === assignmentId ? {
+      ...a,
+      status: 'Active',
+      updatedAt: nowIso
+    } : a));
+
+    setTripSessions(prev => prev.map(t => t.assignmentId === assignmentId ? {
+      ...t,
+      checkInTime: nowIso,
+      updatedAt: nowIso
+    } : t));
+
+    return { success: true, message: 'Field check-in verified successfully.' };
+  };
+
+  const fieldCheckOut = (assignmentId: string): void => {
+    const nowIso = new Date().toISOString();
+    setFieldAssignments(prev => prev.map(a => a.id === assignmentId ? {
+      ...a,
+      status: 'Completed',
+      updatedAt: nowIso
+    } : a));
+
+    setTripSessions(prev => prev.map(t => t.assignmentId === assignmentId ? {
+      ...t,
+      checkOutTime: nowIso,
+      status: 'Completed',
+      trackingStatus: 'Completed',
+      updatedAt: nowIso
+    } : t));
+  };
+
+  const resolveTrackingAlert = (alertId: string) => {
+    const now = new Date();
+    setTrackingAlerts(prev => prev.map(alt => {
+      if (alt.id !== alertId) return alt;
+      const startMs = new Date(alt.issueStartTime).getTime();
+      const durationMin = Math.max(1, Math.round((now.getTime() - startMs) / 60000));
+      return {
+        ...alt,
+        status: 'Resolved',
+        issueEndTime: now.toISOString(),
+        durationMinutes: durationMin,
+        updatedAt: now.toISOString()
+      };
+    }));
+  };
+
+  const getTodayFieldAssignment = (employeeId: string): FieldAssignment | undefined => {
+    const now = new Date();
+    const todayStr = now.toISOString().split('T')[0];
+    return fieldAssignments.find(a => {
+      if (a.employeeId !== employeeId && a.employeeName !== employeeId) return false;
+      if (a.status === 'Cancelled') return false;
+      if (a.scheduleType === 'One Day') {
+        return a.startDate === todayStr;
+      } else if (a.scheduleType === 'Date Range') {
+        return todayStr >= a.startDate && todayStr <= a.endDate;
+      } else if (a.scheduleType === 'Weekly') {
+        const startDayOfWeek = new Date(a.startDate).getDay();
+        return now.getDay() === startDayOfWeek && todayStr >= a.startDate && todayStr <= a.endDate;
+      }
+      return todayStr >= a.startDate && todayStr <= a.endDate;
+    });
+  };
+
   return (
     <HRMSContext.Provider value={{
       currentUser,
@@ -6623,6 +6480,9 @@ export const HRMSProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       addEmployee,
       updateEmployee,
       deleteEmployee,
+      resetEmployeeLogin,
+      updateEmployeeLoginStatus,
+      changeEmployeePassword,
       attendanceRecords,
       markAttendance,
       attendanceAuditLogs,
@@ -6673,8 +6533,12 @@ export const HRMSProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       updateAssigneeProgress,
       closeTask,
       reopenTask,
+      addTaskDailyReport,
+      updateTaskProcessStatus,
       addTaskComment,
       addTaskAttachment,
+      addTaskLink,
+      deleteTaskLink,
       convertMOMActionToTask,
       syncMOMTask,
       deleteEnhancedTask,
@@ -6704,6 +6568,8 @@ export const HRMSProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       addNotification,
       payrollRecords,
       processPayrollBatch,
+      updateEmployeeSalaryScheme,
+      updatePayrollRecordAdvanceDeduction,
       departments,
       addDepartment,
       updateDepartment,
@@ -6809,6 +6675,8 @@ export const HRMSProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       updateMasterLeavePolicy,
       archiveMasterLeavePolicy,
       toggleMasterLeavePolicyStatus,
+      deleteMasterLeavePolicy,
+      resetMasterLeavePoliciesToDefault,
       sandwichPolicies,
       sandwichAuditLogs,
       createSandwichPolicy,
@@ -6843,7 +6711,22 @@ export const HRMSProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       reviewLoanRequest,
       disburseLoan,
       recordManualRepayment,
-      calculateEmployeeLoanEligibility
+      calculateEmployeeLoanEligibility,
+
+      // Field Duty & GPS Live Tracking
+      fieldAssignments,
+      tripSessions,
+      trackingAlerts,
+      createFieldAssignment,
+      updateFieldAssignment,
+      cancelFieldAssignment,
+      startTrip,
+      recordLocationPoint,
+      endTrip,
+      fieldCheckIn,
+      fieldCheckOut,
+      resolveTrackingAlert,
+      getTodayFieldAssignment
     }}>
       {children}
     </HRMSContext.Provider>

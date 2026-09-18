@@ -11,6 +11,9 @@ const envSchema = z.object({
   SUPABASE_SERVICE_ROLE_KEY: z.string().default('mock-service-role-key'),
   JWT_SECRET: z.string().default('vrm-hrms-dev-jwt-secret-key-replace-in-production-2026'),
   CORS_ORIGINS: z.string().default('http://localhost:5173,http://localhost:3000'),
+  DATABASE_URL: z.string().optional(),
+  RATE_LIMIT_WINDOW_MS: z.coerce.number().default(900000), // 15 mins default
+  RATE_LIMIT_MAX: z.coerce.number().default(25000), // high capacity for 100+ req/s
 });
 
 const parsedEnv = envSchema.safeParse(process.env);

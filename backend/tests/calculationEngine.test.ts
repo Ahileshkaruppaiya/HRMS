@@ -258,4 +258,78 @@ describe('Production Payroll Calculation Engine — Specification Verifications'
     expect(structure.hra).toBe(3750.0);
     expect(structure.fixedGross).toBe(15000.0);
   });
+
+  // --------------------------------------------------------------------------
+  // 11. DUAL SCHEME TEST: withPf = false (New employee < 6 months)
+  // PF = 0, ESIC = 0, Total Deductions = 0, Net = Gross ₹15,000
+  // --------------------------------------------------------------------------
+  it('exempts new employee (< 6 months) when withPf is false (PF = 0, ESIC = 0)', () => {
+    const result = computeFullPayroll({
+      employeeId: 'EMP-NEW',
+      monthlySalary: 15000,
+      basicPercentage: 40,
+      daPercentage: 20,
+      conveyancePercentage: 5,
+      hraPercentage: 35,
+      payrollMonth: 9,
+      payrollYear: 2026,
+      withPf: false,
+      settings: mockSettings,
+      attendance: {
+        workingDays: 26,
+        presentDays: 26,
+        paidLeaveDays: 0,
+        unpaidLeaveDays: 0,
+        absentDays: 0,
+        halfDays: 0,
+        lopDays: 0,
+        overtimeHours: 0,
+      },
+    });
+
+    expect(result.grossSalary).toBe(15000.0);
+    expect(result.pfAmount).toBe(0.0);
+    expect(result.esicAmount).toBe(0.0);
+    expect(result.totalDeductions).toBe(0.0);
+    expect(result.netSalary).toBe(15000.0);
+    expect(result.withPf).toBe(false);
+  });
+
+  // --------------------------------------------------------------------------
+  // 12. ADVANCE SALARY / LOAN RECOVERY DEDUCTION ("OTHERS")
+  // e.g. Advance ₹10,000 repayable across 2 months: Month 1 deduction = ₹5,000
+  // --------------------------------------------------------------------------
+  it('deducts Advance Salary / Loan Recovery accurately as Others deduction', () => {
+    const result = computeFullPayroll({
+      employeeId: 'EMP-001',
+      monthlySalary: 15000,
+      basicPercentage: 40,
+      daPercentage: 20,
+      conveyancePercentage: 5,
+      hraPercentage: 35,
+      payrollMonth: 9,
+      payrollYear: 2026,
+      withPf: true,
+      settings: mockSettings,
+      attendance: {
+        workingDays: 26,
+        presentDays: 26,
+        paidLeaveDays: 0,
+        unpaidLeaveDays: 0,
+        absentDays: 0,
+        halfDays: 0,
+        lopDays: 0,
+        overtimeHours: 0,
+      },
+      deductions: {
+        advanceRecovery: 5000,
+      },
+    });
+
+    expect(result.advanceRecovery).toBe(5000.0);
+    // PF: 1,170 + ESIC: 112.50 + Advance: 5,000 = 6,282.50
+    expect(result.totalDeductions).toBe(6282.5);
+    // Net: 15,000 - 6,282.50 = 8,717.50
+    expect(result.netSalary).toBe(8717.5);
+  });
 });

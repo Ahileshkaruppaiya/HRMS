@@ -14,6 +14,7 @@ import {
   Gift
 } from 'lucide-react';
 import { HolidayItem, WeeklyScheduleItem } from '../../types/hrms';
+import { formatDateDDMMYYYY } from '../../utils/dateUtils';
 
 export const HolidayCalendarSettings: React.FC = () => {
   const { 
@@ -208,7 +209,7 @@ export const HolidayCalendarSettings: React.FC = () => {
                 {filteredHolidays.map(hol => (
                   <tr key={hol.id} style={{ borderBottom: '1px solid #F1F5F9' }}>
                     <td style={{ padding: '14px 16px', fontWeight: 700, color: '#1E293B', fontSize: '0.88rem' }}>{hol.name}</td>
-                    <td style={{ padding: '14px 16px', fontSize: '0.85rem', color: '#1E293B', fontWeight: 600 }}>{hol.date}</td>
+                    <td style={{ padding: '14px 16px', fontSize: '0.85rem', color: '#1E293B', fontWeight: 600 }}>{formatDateDDMMYYYY(hol.date)}</td>
                     <td style={{ padding: '14px 16px', fontSize: '0.85rem', color: '#64748B' }}>{hol.daysCount} Day</td>
                     <td style={{ padding: '14px 16px', fontSize: '0.85rem' }}>
                       <span style={{ 

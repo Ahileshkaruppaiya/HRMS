@@ -5,7 +5,6 @@ import {
   Plus, 
   Users, 
   UserPlus, 
-  Star, 
   CheckCircle2, 
   ArrowRight, 
   Check, 
@@ -28,7 +27,8 @@ export const RecruitmentPipeline: React.FC = () => {
     referCandidate, 
     reviewReferral, 
     addEmployee, 
-    currentUser 
+    currentUser,
+    employees 
   } = useHRMS();
 
   // Strict Role Scoping:
@@ -98,7 +98,7 @@ export const RecruitmentPipeline: React.FC = () => {
       name: referralForm.name,
       email: referralForm.email,
       phone: referralForm.phone,
-      referrerEmployeeId: currentUser.employeeId || 'EMP-005',
+      referrerEmployeeId: currentUser.employeeId || '',
       referrerName: `${currentUser.name} (Employee)`,
       rating: 5,
       notes: referralForm.notes
@@ -126,8 +126,8 @@ export const RecruitmentPipeline: React.FC = () => {
       address: 'VRM Company Onboarding',
       department: 'Production Head',
       designation: cand.jobTitle,
-      reportingManagerId: 'EMP-001',
-      reportingManagerName: 'Pavithra',
+      reportingManagerId: employees[0]?.employeeId || 'EMP-000',
+      reportingManagerName: employees[0] ? `${employees[0].firstName} ${employees[0].lastName}`.trim() : 'Velmurugan',
       joiningDate: new Date().toISOString().split('T')[0],
       employmentType: 'Full-Time',
       status: 'Active',
@@ -192,9 +192,11 @@ export const RecruitmentPipeline: React.FC = () => {
       {/* Page Header */}
       <div className="page-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
         <div className="page-title-group">
-          <h1>Recruitment & Referral Portal</h1>
+          <h1>{isEmployeeRole ? 'Referral Portal' : 'Recruitment & Referral Portal'}</h1>
           <p className="page-subtitle">
-            Candidate recruitment pipeline, job openings, and employee referral tracking with HR & CEO acceptance
+            {isEmployeeRole 
+              ? 'Submit candidate referrals, track referral stages, and earn referral bonuses'
+              : 'Candidate recruitment pipeline, job openings, and employee referral tracking with HR & CEO acceptance'}
           </p>
         </div>
         <div className="header-actions" style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
@@ -292,15 +294,12 @@ export const RecruitmentPipeline: React.FC = () => {
                             color: referralStatus === 'Accepted' ? '#15803D' : referralStatus === 'Rejected' ? '#B91C1C' : '#B45309',
                             border: referralStatus === 'Accepted' ? '1px solid #BBF7D0' : referralStatus === 'Rejected' ? '1px solid #FECACA' : '1px solid #FDE68A'
                           }}>
-                            {referralStatus === 'Accepted' ? '✓ Ref Accepted' : referralStatus === 'Rejected' ? '✕ Ref Rejected' : '⏳ Ref Pending'} 
+                            {referralStatus === 'Accepted' ? '✓ Ref Accepted' : referralStatus === 'Rejected' ? '✕ Ref Rejected' : 'Ref Pending'} 
                             • By {c.referrerName}
                           </span>
                         </div>
                       )}
 
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '2px', fontSize: '0.72rem', color: 'var(--accent-amber)', marginBottom: '8px' }}>
-                        <Star size={12} /> {c.rating} / 5 Rating
-                      </div>
 
                       {/* HR & CEO Pipeline Controls */}
                       {canApprovePipeline ? (
@@ -407,15 +406,6 @@ export const RecruitmentPipeline: React.FC = () => {
                 Referred Candidate Applications
               </h3>
               <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                {canReferCandidate && (
-                  <button 
-                    className="btn btn-primary btn-sm" 
-                    onClick={() => setShowReferralModal(true)}
-                    style={{ fontSize: '0.78rem', fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: '6px' }}
-                  >
-                    <UserPlus size={14} /> Refer New Candidate
-                  </button>
-                )}
                 <span style={{ fontSize: '0.75rem', color: '#64748B' }}>
                   Showing {referralCandidates.length} referrals
                 </span>
@@ -509,7 +499,7 @@ export const RecruitmentPipeline: React.FC = () => {
                                 alignItems: 'center',
                                 gap: '5px'
                               }}>
-                                <Clock size={11} /> ⏳ Pending HR/CEO Review
+                                <Clock size={11} /> Pending HR/CEO Review
                               </span>
                             )}
 
@@ -664,7 +654,7 @@ export const RecruitmentPipeline: React.FC = () => {
                             ) : (
                               /* Read-only feedback for Employees and other roles */
                               <div style={{ fontSize: '0.72rem', color: '#64748B' }}>
-                                {referralStatus === 'Pending' && '⏳ Awaiting HR / CEO Approval'}
+                                {referralStatus === 'Pending' && 'Awaiting HR / CEO Approval'}
                                 {referralStatus === 'Accepted' && '✓ Approved by Executive Panel'}
                                 {referralStatus === 'Rejected' && '✕ Referral Declined'}
                               </div>
@@ -763,7 +753,7 @@ export const RecruitmentPipeline: React.FC = () => {
               <div>
                 <h2 style={{ fontSize: '1.1rem', fontWeight: 800, margin: 0, color: '#0F172A' }}>Refer Candidate</h2>
                 <div style={{ fontSize: '0.74rem', color: '#0E7490', marginTop: '2px', fontWeight: 600 }}>
-                  Submitted by: {currentUser.name} (Employee: {currentUser.employeeId || 'EMP-005'})
+                  Submitted by: {currentUser.name}{currentUser.employeeId ? ` (${currentUser.employeeId})` : ''}
                 </div>
               </div>
               <button onClick={() => setShowReferralModal(false)} style={{ background: 'none', border: 'none', fontSize: '1.1rem', cursor: 'pointer' }}>✕</button>

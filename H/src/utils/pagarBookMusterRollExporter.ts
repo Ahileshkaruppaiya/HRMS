@@ -260,10 +260,19 @@ export function downloadPagarBookMusterRollExcel(
       let fineStr = '-';
 
       if (leave) {
-        state = 'L-CL';
-        if (leave.leaveType.toLowerCase().includes('sick')) state = 'L-SL';
-        else if (leave.leaveType.toLowerCase().includes('earned') || leave.leaveType.toLowerCase().includes('privilege')) state = 'L-EL';
-        totalPaidLeaves++;
+        const isWfh = leave.leaveType.toLowerCase().includes('work from home') || leave.leaveType.toLowerCase() === 'wfh';
+        if (isWfh) {
+          state = '1P';
+          inTime = '09:00';
+          outTime = '18:00';
+          whStr = '08:30';
+          totalPresent++;
+        } else {
+          state = 'L-CL';
+          if (leave.leaveType.toLowerCase().includes('sick')) state = 'L-SL';
+          else if (leave.leaveType.toLowerCase().includes('earned') || leave.leaveType.toLowerCase().includes('privilege')) state = 'L-EL';
+          totalPaidLeaves++;
+        }
       } else if (isSunday) {
         state = 'WO';
         totalPaidLeaves++;

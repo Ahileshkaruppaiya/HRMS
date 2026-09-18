@@ -46,6 +46,7 @@ export type ModuleName =
   | 'organization'
   | 'assets'
   | 'settings'
+  | 'tracking'
   | 'profile';
 
 export interface User {
@@ -81,7 +82,7 @@ export interface Employee {
   reportingManagerId: string;
   reportingManagerName: string;
   joiningDate: string;
-  employmentType: 'Full-Time' | 'Part-Time' | 'Contract' | 'Intern';
+  employmentType: 'Full-Time' | 'Part-Time' | 'Contract' | 'Intern' | 'Provisional';
   status: 'Active' | 'On Leave' | 'Terminated';
   avatar: string;
   basicSalary: number;
@@ -90,9 +91,12 @@ export interface Employee {
     transport: number;
     medical: number;
     special: number;
+    da?: number;
+    conveyance?: number;
   };
+  withPf?: boolean;
   bankDetails: BankDetails;
-  attendanceMethod: 'Face Scan' | 'GPS Location' | 'Manual' | 'Biometric';
+  attendanceMethod: 'Face Scan' | 'GPS Location' | 'Manual' | 'Biometric' | 'Exempt';
   gpsAllowed: boolean;
   faceRegistered: boolean;
   facePhotoUrl?: string;
@@ -119,6 +123,15 @@ export interface Employee {
   // Extended Comprehensive Onboarding Fields
   personalEmail?: string;
   companyEmail?: string;
+  password?: string;
+  authUserId?: string;
+  mustChangePassword?: boolean;
+  accountStatus?: 'ACTIVE' | 'LOCKED' | 'DISABLED';
+  credentialEmailStatus?: 'PENDING' | 'SENT' | 'FAILED';
+  credentialEmailSentAt?: string;
+  lastLoginAt?: string;
+  skills?: string[];
+  role?: Role | string;
   maritalStatus?: 'Single' | 'Married' | 'Divorced' | 'Widowed';
   workLocation?: string;
   currentAddress?: {
@@ -179,6 +192,12 @@ export interface Employee {
     monthlyCtc?: number;
     panNumber?: string;
     uanNumber?: string;
+    withPf?: boolean;
+    salaryScheme?: 'WITH_PF' | 'WITHOUT_PF';
+    da?: number;
+    conveyance?: number;
+    hra?: number;
+    basicSalary?: number;
   };
   shiftDetails?: {
     shiftType?: string;
@@ -407,7 +426,12 @@ export interface PayrollRecord {
   year: number;
   basicSalary: number;
   allowances: number;
+  da?: number;
+  conveyance?: number;
+  hra?: number;
+  withPf?: boolean;
   bonus: number;
+  attendanceBonus?: number;
   taxDeduction: number;
   leaveDeduction: number;
   advanceDeduction?: number;
@@ -421,6 +445,7 @@ export interface PayrollRecord {
   paidDays?: number;
   lopDays?: number;
   overtimeHours?: number;
+  overtimeAmount?: number;
   netSalary: number;
   rewardEarnings?: number;
   lateAttendanceDeduction?: number;
@@ -495,7 +520,7 @@ export interface AssetItem {
   purchaseDate: string;
   purchaseCost: number;
   warrantyExpiry: string;
-  status: 'Assigned' | 'Available' | 'Under Maintenance' | 'Retired';
+  status: 'Assigned' | 'Available' | 'Under Maintenance';
   condition: 'New' | 'Good' | 'Fair' | 'Needs Repair';
   notes?: string;
 }

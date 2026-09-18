@@ -8,7 +8,8 @@ import {
   Trophy, 
   ChevronRight,
   User,
-  Banknote
+  Banknote,
+  Layers
 } from 'lucide-react';
 import { NewSettingsSection } from '../../types/settings';
 
@@ -100,6 +101,15 @@ export const SettingsDashboard: React.FC<SettingsDashboardProps> = ({ onSelectSe
       bgColor: '#ECFDF5',
       description: 'Work tenure rules, maximum salary advance borrowing caps, monthly EMI tenure bounds, and payroll recovery.',
       statusBadge: `${activeLoanCount} Policies Active`
+    },
+    {
+      id: 'integrations' as NewSettingsSection,
+      title: '8. Third-Party Integrations & APIs',
+      icon: Layers,
+      color: '#0E7490',
+      bgColor: '#ECFEFF',
+      description: 'Connect WhatsApp Business, Meta Ads lead sync, Google Gemini AI, Gmail SMTP, Tally Prime, and Biometrics.',
+      statusBadge: 'Integrations Available'
     }
   ];
 

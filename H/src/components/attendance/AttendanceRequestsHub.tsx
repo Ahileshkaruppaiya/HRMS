@@ -32,7 +32,8 @@ export const AttendanceRequestsHub: React.FC = () => {
     rejectMissedPunchRequest,
     approveOtRequest,
     rejectOtRequest,
-    currentUser
+    currentUser,
+    shifts
   } = useHRMS();
 
   // Section 26: Separate Attendance Requests & OT Requests
@@ -242,7 +243,7 @@ export const AttendanceRequestsHub: React.FC = () => {
                       <div className="vrm-req-meta-row">
                         <span>Dept: <strong className="vrm-req-meta-item">{item.department}</strong></span>
                         <span>•</span>
-                        <span>Shift: <strong className="vrm-req-meta-item">{item.shiftName || 'General (09:00 - 18:00)'}</strong></span>
+                        <span>Shift: <strong className="vrm-req-meta-item">{item.shiftName || shifts[0]?.shiftName || 'Shift 1 (09:00 AM - 06:00 PM)'}</strong></span>
                         <span>•</span>
                         <span>Date: <strong className="vrm-req-meta-item" style={{ color: '#0E7490' }}>{formatDateDDMMYYYY(item.date)}</strong></span>
                       </div>

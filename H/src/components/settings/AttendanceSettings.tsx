@@ -23,8 +23,9 @@ import {
   Info,
   Edit2,
   Trash2,
-  ArrowRight
+  Tag
 } from 'lucide-react';
+import { formatDateDDMMYYYY } from '../../utils/dateUtils';
 import { 
   Shift, 
   LeavePolicyItem, 
@@ -132,8 +133,8 @@ export const AttendanceSettings: React.FC = () => {
     startTime: '09:00',
     endTime: '18:00',
     gracePeriodMins: 15,
-    breakDurationMins: 60,
-    workingHours: 8,
+    breakDurationMins: 45,
+    workingHours: 8.25,
     color: '#0E7490'
   });
 
@@ -243,7 +244,7 @@ export const AttendanceSettings: React.FC = () => {
     }
     setIsFormOpen(false);
     setEditingId(null);
-    setShiftForm({ shiftName: '', startTime: '09:00', endTime: '18:00', gracePeriodMins: 15, breakDurationMins: 60, workingHours: 8, color: '#0E7490' });
+    setShiftForm({ shiftName: '', startTime: '09:00', endTime: '18:00', gracePeriodMins: 15, breakDurationMins: 45, workingHours: 8.25, color: '#0E7490' });
   };
 
   const startEditShift = (shift: Shift) => {
@@ -252,8 +253,8 @@ export const AttendanceSettings: React.FC = () => {
       startTime: shift.startTime,
       endTime: shift.endTime,
       gracePeriodMins: shift.gracePeriodMins || 15,
-      breakDurationMins: shift.breakDurationMins || 60,
-      workingHours: shift.workingHours || 8,
+      breakDurationMins: shift.breakDurationMins || 45,
+      workingHours: shift.workingHours || 8.25,
       color: shift.color || '#0E7490'
     });
     setEditingId(shift.id);
@@ -783,7 +784,7 @@ export const AttendanceSettings: React.FC = () => {
                     type="button"
                     onClick={() => {
                       setEditingId(null);
-                      setShiftForm({ shiftName: '', startTime: '09:00', endTime: '18:00', gracePeriodMins: 15, breakDurationMins: 60, workingHours: 8, color: '#0E7490' });
+                      setShiftForm({ shiftName: '', startTime: '09:00', endTime: '18:00', gracePeriodMins: 15, breakDurationMins: 45, workingHours: 8.25, color: '#0E7490' });
                       setIsFormOpen(prev => !prev);
                     }}
                     style={primaryButtonStyle}
@@ -1008,7 +1009,7 @@ export const AttendanceSettings: React.FC = () => {
                       <div>
                         <div style={{ fontSize: '0.88rem', fontWeight: 700, color: '#0f172a' }}>{hp.name}</div>
                         <div style={{ fontSize: '0.78rem', color: '#64748b' }}>
-                          Date: <strong>{hp.date}</strong> • Paid: {hp.daysCount} Day(s) {hp.applicableLocation && `• ${hp.applicableLocation}`}
+                          Date: <strong>{formatDateDDMMYYYY(hp.date)}</strong> • Paid: {hp.daysCount} Day(s) {hp.applicableLocation && `• ${hp.applicableLocation}`}
                         </div>
                       </div>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>

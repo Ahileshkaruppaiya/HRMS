@@ -1,5 +1,8 @@
 import { getSupabaseAdmin, isRealSupabaseConfigured } from '../config/supabase.js';
 import { SalaryStructureInput } from '../types/payroll.js';
+import { memoryCache } from '../services/cacheService.js';
+
+import { AccountStatus, CredentialEmailStatus } from '../types/auth.js';
 
 export interface EmployeeRecord {
   id: string;
@@ -11,9 +14,24 @@ export interface EmployeeRecord {
   designation: string;
   basicSalary: number;
   grossSalary: number;
+  da?: number;
+  conveyance?: number;
+  hra?: number;
+  withPf?: boolean;
   bankName?: string;
   accountNumber?: string;
   ifscCode?: string;
+  authUserId?: string;
+  mustChangePassword?: boolean;
+  accountStatus?: AccountStatus;
+  credentialEmailStatus?: CredentialEmailStatus;
+  credentialEmailSentAt?: string;
+  lastLoginAt?: string;
+  status?: string;
+  phone?: string;
+  branch?: string;
+  joiningDate?: string;
+  attendanceMethod?: string;
 }
 
 export interface EmployeeSalaryStructureRecord extends SalaryStructureInput {
@@ -22,6 +40,7 @@ export interface EmployeeSalaryStructureRecord extends SalaryStructureInput {
   effectiveFrom: string;
   effectiveTo?: string | null;
   isActive: boolean;
+  withPf?: boolean;
 }
 
 // Initial seed employees aligned exactly with frontend HRMS employee master
@@ -39,6 +58,11 @@ const fallbackEmployees: EmployeeRecord[] = [
     bankName: 'HDFC Bank',
     accountNumber: '****1001',
     ifscCode: 'HDFC0001234',
+    authUserId: 'usr-000',
+    accountStatus: 'ACTIVE',
+    mustChangePassword: false,
+    credentialEmailStatus: 'SENT',
+    credentialEmailSentAt: '2026-01-01T09:00:00.000Z',
   },
   {
     id: 'e01a1111-0000-0000-0000-000000000001',
@@ -53,132 +77,11 @@ const fallbackEmployees: EmployeeRecord[] = [
     bankName: 'ICICI Bank',
     accountNumber: '****6789',
     ifscCode: 'ICIC00912',
-  },
-  {
-    id: 'e01a1111-0000-0000-0000-000000000002',
-    employeeId: 'EMP-002',
-    firstName: 'Ramesh',
-    lastName: 'Kumar',
-    email: 'ramesh.ph@vrmstructures.com',
-    department: 'Dispatch',
-    designation: 'Dispatch Head',
-    basicSalary: 8000,
-    grossSalary: 20000,
-    bankName: 'State Bank of India',
-    accountNumber: '****4321',
-    ifscCode: 'SBIN00123',
-  },
-  {
-    id: 'e01a1111-0000-0000-0000-000000000003',
-    employeeId: 'EMP-003',
-    firstName: 'Suresh',
-    lastName: 'Patel',
-    email: 'suresh.dh@vrmstructures.com',
-    department: 'Dispatch',
-    designation: 'Logistics Coordinator',
-    basicSalary: 12000,
-    grossSalary: 30000,
-    bankName: 'Canara Bank',
-    accountNumber: '****9876',
-    ifscCode: 'CNRB00876',
-  },
-  {
-    id: 'e01a1111-0000-0000-0000-000000000004',
-    employeeId: 'EMP-004',
-    firstName: 'Karthik',
-    lastName: 'Rajan',
-    email: 'karthik.fs@vrmstructures.com',
-    department: 'Procurement',
-    designation: 'Procurement Head',
-    basicSalary: 26000,
-    grossSalary: 65000,
-    bankName: 'Axis Bank',
-    accountNumber: '****1122',
-    ifscCode: 'UTIB00345',
-  },
-  {
-    id: 'e01a1111-0000-0000-0000-000000000005',
-    employeeId: 'EMP-005',
-    firstName: 'Murugan',
-    lastName: 'S',
-    email: 'murugan.fe@vrmstructures.com',
-    department: 'Procurement',
-    designation: 'Purchase Executive',
-    basicSalary: 15200,
-    grossSalary: 38000,
-    bankName: 'Indian Bank',
-    accountNumber: '****5566',
-    ifscCode: 'IDIB00112',
-  },
-  {
-    id: 'e01a1111-0000-0000-0000-000000000006',
-    employeeId: 'EMP-006',
-    firstName: 'Anand',
-    lastName: 'Sharma',
-    email: 'anand.pr@vrmstructures.com',
-    department: 'Procurement',
-    designation: 'Vendor Coordinator',
-    basicSalary: 35200,
-    grossSalary: 88000,
-    bankName: 'HDFC Bank',
-    accountNumber: '****7788',
-    ifscCode: 'HDFC0008899',
-  },
-  {
-    id: 'e01a1111-0000-0000-0000-000000000007',
-    employeeId: 'EMP-007',
-    firstName: 'Priya',
-    lastName: 'Natarajan',
-    email: 'priya.ah@vrmstructures.com',
-    department: 'Accounts',
-    designation: 'Accounts Head',
-    basicSalary: 36800,
-    grossSalary: 92000,
-    bankName: 'ICICI Bank',
-    accountNumber: '****2233',
-    ifscCode: 'ICIC00124',
-  },
-  {
-    id: 'e01a1111-0000-0000-0000-000000000008',
-    employeeId: 'EMP-008',
-    firstName: 'Rajesh',
-    lastName: 'Kannan',
-    email: 'rajesh.sh@vrmstructures.com',
-    department: 'Sales',
-    designation: 'Sales Head',
-    basicSalary: 38400,
-    grossSalary: 96000,
-    bankName: 'Kotak Mahindra Bank',
-    accountNumber: '****4455',
-    ifscCode: 'KKBK00012',
-  },
-  {
-    id: 'e01a1111-0000-0000-0000-000000000009',
-    employeeId: 'EMP-009',
-    firstName: 'Dinesh',
-    lastName: 'Kumar',
-    email: 'dinesh.se@vrmstructures.com',
-    department: 'Sales',
-    designation: 'Sales Executive',
-    basicSalary: 18000,
-    grossSalary: 45000,
-    bankName: 'Axis Bank',
-    accountNumber: '****6677',
-    ifscCode: 'UTIB00889',
-  },
-  {
-    id: 'e01a1111-0000-0000-0000-000000000010',
-    employeeId: 'EMP-010',
-    firstName: 'Swetha',
-    lastName: 'Sundar',
-    email: 'swetha.de@vrmstructures.com',
-    department: 'Design',
-    designation: 'Design Executive',
-    basicSalary: 27200,
-    grossSalary: 68000,
-    bankName: 'State Bank of India',
-    accountNumber: '****8899',
-    ifscCode: 'SBIN00456',
+    authUserId: 'usr-001',
+    accountStatus: 'ACTIVE',
+    mustChangePassword: false,
+    credentialEmailStatus: 'SENT',
+    credentialEmailSentAt: '2026-01-01T09:00:00.000Z',
   },
 ];
 
@@ -203,133 +106,7 @@ const inMemoryStructures = new Map<string, EmployeeSalaryStructureRecord>([
     {
       id: 'ss-001',
       employeeId: 'EMP-001',
-      monthlySalary: 15000, // ₹15,000 project standard test baseline
-      basicPercentage: 40,
-      daPercentage: 20,
-      conveyancePercentage: 5,
-      hraPercentage: 35,
-      effectiveFrom: '2026-01-01',
-      isActive: true,
-    },
-  ],
-  [
-    'EMP-002',
-    {
-      id: 'ss-002',
-      employeeId: 'EMP-002',
-      monthlySalary: 20000,
-      basicPercentage: 40,
-      daPercentage: 20,
-      conveyancePercentage: 5,
-      hraPercentage: 35,
-      effectiveFrom: '2026-01-01',
-      isActive: true,
-    },
-  ],
-  [
-    'EMP-003',
-    {
-      id: 'ss-003',
-      employeeId: 'EMP-003',
-      monthlySalary: 30000,
-      basicPercentage: 40,
-      daPercentage: 20,
-      conveyancePercentage: 5,
-      hraPercentage: 35,
-      effectiveFrom: '2026-01-01',
-      isActive: true,
-    },
-  ],
-  [
-    'EMP-004',
-    {
-      id: 'ss-004',
-      employeeId: 'EMP-004',
-      monthlySalary: 65000,
-      basicPercentage: 40,
-      daPercentage: 20,
-      conveyancePercentage: 5,
-      hraPercentage: 35,
-      effectiveFrom: '2026-01-01',
-      isActive: true,
-    },
-  ],
-  [
-    'EMP-005',
-    {
-      id: 'ss-005',
-      employeeId: 'EMP-005',
-      monthlySalary: 38000,
-      basicPercentage: 40,
-      daPercentage: 20,
-      conveyancePercentage: 5,
-      hraPercentage: 35,
-      effectiveFrom: '2026-01-01',
-      isActive: true,
-    },
-  ],
-  [
-    'EMP-006',
-    {
-      id: 'ss-006',
-      employeeId: 'EMP-006',
-      monthlySalary: 88000,
-      basicPercentage: 40,
-      daPercentage: 20,
-      conveyancePercentage: 5,
-      hraPercentage: 35,
-      effectiveFrom: '2026-01-01',
-      isActive: true,
-    },
-  ],
-  [
-    'EMP-007',
-    {
-      id: 'ss-007',
-      employeeId: 'EMP-007',
-      monthlySalary: 92000,
-      basicPercentage: 40,
-      daPercentage: 20,
-      conveyancePercentage: 5,
-      hraPercentage: 35,
-      effectiveFrom: '2026-01-01',
-      isActive: true,
-    },
-  ],
-  [
-    'EMP-008',
-    {
-      id: 'ss-008',
-      employeeId: 'EMP-008',
-      monthlySalary: 96000,
-      basicPercentage: 40,
-      daPercentage: 20,
-      conveyancePercentage: 5,
-      hraPercentage: 35,
-      effectiveFrom: '2026-01-01',
-      isActive: true,
-    },
-  ],
-  [
-    'EMP-009',
-    {
-      id: 'ss-009',
-      employeeId: 'EMP-009',
-      monthlySalary: 45000,
-      basicPercentage: 40,
-      daPercentage: 20,
-      conveyancePercentage: 5,
-      hraPercentage: 35,
-      effectiveFrom: '2026-01-01',
-      isActive: true,
-    },
-  ],
-  [
-    'EMP-010',
-    {
-      id: 'ss-010',
-      employeeId: 'EMP-010',
-      monthlySalary: 68000,
+      monthlySalary: 15000,
       basicPercentage: 40,
       daPercentage: 20,
       conveyancePercentage: 5,
@@ -342,15 +119,66 @@ const inMemoryStructures = new Map<string, EmployeeSalaryStructureRecord>([
 
 export class EmployeeRepository {
   async getEmployeeById(idOrEmpId: string): Promise<EmployeeRecord | null> {
+    if (!idOrEmpId || typeof idOrEmpId !== 'string') return null;
+    const cleanId = idOrEmpId.trim();
+
+    // High-speed memory cache check
+    const cacheKey = `emp_${cleanId}`;
+    const cached = memoryCache.get<EmployeeRecord>(cacheKey);
+    if (cached) return cached;
+
+    // Check local fallback master store
+    const local = fallbackEmployees.find(e => e.id === cleanId || e.employeeId === cleanId);
+    if (local) {
+      memoryCache.set(cacheKey, local, 30000);
+      return local;
+    }
+
     if (isRealSupabaseConfigured()) {
       try {
         const supabase = getSupabaseAdmin();
         const { data, error } = await supabase
           .from('employees')
           .select('*')
-          .or(`id.eq.${idOrEmpId},employee_id.eq.${idOrEmpId}`)
+          .or(`id.eq.${cleanId},employee_id.eq.${cleanId}`)
           .single();
 
+        if (data && !error) {
+          const emp: EmployeeRecord = {
+            id: data.id,
+            employeeId: data.employee_id,
+            firstName: data.first_name,
+            lastName: data.last_name,
+            email: data.email,
+            department: data.department || 'General',
+            designation: data.designation || 'Staff',
+            basicSalary: Number(data.basic_salary) || 0,
+            grossSalary: Number(data.basic_salary) * 2.5 || 15000,
+            bankName: data.bank_name,
+            accountNumber: data.account_number,
+            ifscCode: data.ifsc_code,
+          };
+          memoryCache.set(cacheKey, emp, 30000);
+          return emp;
+        }
+      } catch {
+        // Fall back to null
+      }
+    }
+
+    return null;
+  }
+
+  async findByEmail(email: string): Promise<EmployeeRecord | null> {
+    if (!email) return null;
+    const clean = email.toLowerCase().trim();
+    const local = fallbackEmployees.find((e) => e.email.toLowerCase().trim() === clean);
+    if (local) return local;
+
+    if (isRealSupabaseConfigured()) {
+      try {
+        const supabase = getSupabaseAdmin();
+        const { data, error } = await supabase.from('employees').select('*').eq('email', clean).single();
         if (data && !error) {
           return {
             id: data.id,
@@ -365,35 +193,74 @@ export class EmployeeRepository {
             bankName: data.bank_name,
             accountNumber: data.account_number,
             ifscCode: data.ifsc_code,
+            authUserId: data.auth_id,
+            mustChangePassword: data.must_change_password,
+            accountStatus: data.account_status,
+            credentialEmailStatus: data.credential_email_status,
+            credentialEmailSentAt: data.credential_email_sent_at,
+            lastLoginAt: data.last_login_at,
           };
         }
       } catch {
-        // Fall back to in-memory store
+        // non-blocking
       }
     }
 
-    return (
-      fallbackEmployees.find(e => e.id === idOrEmpId || e.employeeId === idOrEmpId) || {
-        id: idOrEmpId,
-        employeeId: idOrEmpId,
-        firstName: 'Staff',
-        lastName: 'Member',
-        email: `${idOrEmpId.toLowerCase()}@vrmstructures.in`,
-        department: 'Operations',
-        designation: 'Associate',
-        basicSalary: 6000,
-        grossSalary: 15000,
-      }
-    );
+    return null;
   }
 
+  async findByEmployeeId(empId: string): Promise<EmployeeRecord | null> {
+    if (!empId) return null;
+    const clean = empId.toLowerCase().trim();
+    const local = fallbackEmployees.find((e) => e.employeeId.toLowerCase().trim() === clean);
+    if (local) return local;
+
+    if (isRealSupabaseConfigured()) {
+      try {
+        const supabase = getSupabaseAdmin();
+        const { data, error } = await supabase.from('employees').select('*').ilike('employee_id', clean).single();
+        if (data && !error) {
+          return {
+            id: data.id,
+            employeeId: data.employee_id,
+            firstName: data.first_name,
+            lastName: data.last_name,
+            email: data.email,
+            department: data.department || 'General',
+            designation: data.designation || 'Staff',
+            basicSalary: Number(data.basic_salary) || 0,
+            grossSalary: Number(data.basic_salary) * 2.5 || 15000,
+            bankName: data.bank_name,
+            accountNumber: data.account_number,
+            ifscCode: data.ifsc_code,
+            authUserId: data.auth_id,
+            mustChangePassword: data.must_change_password,
+            accountStatus: data.account_status,
+            credentialEmailStatus: data.credential_email_status,
+            credentialEmailSentAt: data.credential_email_sent_at,
+            lastLoginAt: data.last_login_at,
+          };
+        }
+      } catch {
+        // non-blocking
+      }
+    }
+
+    return null;
+  }
+
+
   async getAllEmployees(): Promise<EmployeeRecord[]> {
+    const cacheKey = 'employees_all_active';
+    const cached = memoryCache.get<EmployeeRecord[]>(cacheKey);
+    if (cached) return cached;
+
     if (isRealSupabaseConfigured()) {
       try {
         const supabase = getSupabaseAdmin();
         const { data, error } = await supabase.from('employees').select('*').eq('status', 'Active');
         if (data && !error && data.length > 0) {
-          return data.map(d => ({
+          const list = data.map(d => ({
             id: d.id,
             employeeId: d.employee_id,
             firstName: d.first_name,
@@ -407,17 +274,35 @@ export class EmployeeRepository {
             accountNumber: d.account_number,
             ifscCode: d.ifsc_code,
           }));
+          memoryCache.set(cacheKey, list, 30000);
+          return list;
         }
       } catch {
         // fallback
       }
     }
+    memoryCache.set(cacheKey, fallbackEmployees, 30000);
     return fallbackEmployees;
   }
 
   async getSalaryStructure(employeeId: string): Promise<EmployeeSalaryStructureRecord | null> {
-    const emp = await this.getEmployeeById(employeeId);
-    const key = emp ? emp.employeeId : employeeId;
+    if (!employeeId) return null;
+    const cleanId = employeeId.trim();
+    const cacheKey = `ss_${cleanId}`;
+    const cached = memoryCache.get<EmployeeSalaryStructureRecord>(cacheKey);
+    if (cached) return cached;
+
+    const emp = await this.getEmployeeById(cleanId);
+    const key = emp ? emp.employeeId : cleanId;
+
+    const found = inMemoryStructures.get(key);
+    if (found) {
+      if (found.withPf === undefined && emp?.withPf !== undefined) {
+        found.withPf = emp.withPf;
+      }
+      memoryCache.set(cacheKey, found, 30000);
+      return found;
+    }
 
     if (isRealSupabaseConfigured() && emp) {
       try {
@@ -430,7 +315,7 @@ export class EmployeeRepository {
           .single();
 
         if (data && !error) {
-          return {
+          const struct: EmployeeSalaryStructureRecord = {
             id: data.id,
             employeeId: key,
             monthlySalary: Number(data.monthly_salary),
@@ -442,14 +327,13 @@ export class EmployeeRepository {
             effectiveTo: data.effective_to,
             isActive: data.is_active,
           };
+          memoryCache.set(cacheKey, struct, 30000);
+          return struct;
         }
       } catch {
         // fallback
       }
     }
-
-    const found = inMemoryStructures.get(key);
-    if (found) return found;
 
     // Default structure (40% Basic, 20% DA, 5% Conveyance, 35% HRA) for monthly salary 15000
     const defaultStructure: EmployeeSalaryStructureRecord = {
@@ -460,10 +344,12 @@ export class EmployeeRepository {
       daPercentage: 20,
       conveyancePercentage: 5,
       hraPercentage: 35,
+      withPf: emp?.withPf !== undefined ? emp.withPf : true,
       effectiveFrom: '2026-01-01',
       isActive: true,
     };
     inMemoryStructures.set(key, defaultStructure);
+    memoryCache.set(cacheKey, defaultStructure, 30000);
     return defaultStructure;
   }
 
@@ -482,12 +368,15 @@ export class EmployeeRepository {
       daPercentage: structure.daPercentage,
       conveyancePercentage: structure.conveyancePercentage,
       hraPercentage: structure.hraPercentage,
+      withPf: structure.withPf !== undefined ? structure.withPf : (emp?.withPf !== undefined ? emp.withPf : true),
       effectiveFrom: structure.effectiveFrom || new Date().toISOString().split('T')[0],
       effectiveTo: structure.effectiveTo || null,
       isActive: true,
     };
 
     inMemoryStructures.set(key, record);
+    memoryCache.invalidate(`ss_${key}`);
+    memoryCache.invalidate(`ss_${employeeId}`);
 
     if (isRealSupabaseConfigured() && emp) {
       try {
@@ -516,6 +405,119 @@ export class EmployeeRepository {
 
     return record;
   }
+
+  async getEmployees(filters?: { department?: string; status?: string; search?: string }): Promise<EmployeeRecord[]> {
+    let list = await this.getAllEmployees();
+
+    if (filters?.department && filters.department !== 'All') {
+      list = list.filter((e) => e.department.toLowerCase() === filters.department?.toLowerCase());
+    }
+
+    if (filters?.search) {
+      const q = filters.search.toLowerCase();
+      list = list.filter(
+        (e) =>
+          e.firstName.toLowerCase().includes(q) ||
+          e.lastName.toLowerCase().includes(q) ||
+          e.employeeId.toLowerCase().includes(q) ||
+          e.email.toLowerCase().includes(q)
+      );
+    }
+
+    return list;
+  }
+
+  async createEmployee(data: Partial<EmployeeRecord>): Promise<EmployeeRecord> {
+    const id = `e01a1111-0000-0000-0000-${Date.now().toString(16).padStart(12, '0').slice(-12)}`;
+    const empId = data.employeeId || `EMP-${(fallbackEmployees.length + 1).toString().padStart(3, '0')}`;
+    
+    const newEmp: EmployeeRecord = {
+      id,
+      employeeId: empId,
+      firstName: data.firstName || 'New',
+      lastName: data.lastName || 'Employee',
+      email: data.email || `${empId.toLowerCase()}@vrmstructures.com`,
+      department: data.department || 'General',
+      designation: data.designation || 'Staff',
+      basicSalary: data.basicSalary || 15000,
+      grossSalary: data.grossSalary || 30000,
+      bankName: data.bankName || 'State Bank of India',
+      accountNumber: data.accountNumber || '****0000',
+      ifscCode: data.ifscCode || 'SBIN000123',
+      authUserId: data.authUserId,
+      mustChangePassword: data.mustChangePassword !== undefined ? data.mustChangePassword : true,
+      accountStatus: data.accountStatus || 'ACTIVE',
+      credentialEmailStatus: data.credentialEmailStatus || 'PENDING',
+      credentialEmailSentAt: data.credentialEmailSentAt,
+      lastLoginAt: data.lastLoginAt,
+      status: data.status || 'Active',
+      phone: data.phone,
+      branch: data.branch,
+      joiningDate: data.joiningDate,
+      attendanceMethod: data.attendanceMethod || 'Face Scan',
+    };
+
+    fallbackEmployees.push(newEmp);
+    memoryCache.invalidatePattern('emp_');
+    memoryCache.invalidatePattern('ss_');
+
+    if (isRealSupabaseConfigured()) {
+      try {
+        const supabase = getSupabaseAdmin();
+        await supabase.from('employees').insert({
+          employee_id: newEmp.employeeId,
+          first_name: newEmp.firstName,
+          last_name: newEmp.lastName,
+          email: newEmp.email,
+          basic_salary: newEmp.basicSalary,
+        });
+      } catch (err) {
+        console.warn('Could not insert employee to Supabase, fallback stored:', err);
+      }
+    }
+
+    return newEmp;
+  }
+
+  async updateEmployee(id: string, updates: Partial<EmployeeRecord>): Promise<EmployeeRecord | null> {
+    const emp = await this.getEmployeeById(id);
+    if (!emp) return null;
+
+    Object.assign(emp, updates);
+    memoryCache.invalidatePattern('emp_');
+    memoryCache.invalidatePattern('ss_');
+
+    if (isRealSupabaseConfigured()) {
+      try {
+        const supabase = getSupabaseAdmin();
+        await supabase
+          .from('employees')
+          .update({
+            first_name: emp.firstName,
+            last_name: emp.lastName,
+            email: emp.email,
+            basic_salary: emp.basicSalary,
+          })
+          .eq('employee_id', emp.employeeId);
+      } catch (err) {
+        console.warn('Could not update employee in Supabase:', err);
+      }
+    }
+
+    return emp;
+  }
+
+  async deleteEmployee(id: string): Promise<boolean> {
+    const idx = fallbackEmployees.findIndex((e) => e.id === id || e.employeeId === id);
+    if (idx >= 0) {
+      fallbackEmployees.splice(idx, 1);
+      memoryCache.invalidatePattern('emp_');
+      memoryCache.invalidatePattern('ss_');
+      return true;
+    }
+    return false;
+  }
 }
 
 export const employeeRepository = new EmployeeRepository();
+
