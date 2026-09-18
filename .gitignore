@@ -3,8 +3,9 @@ node_modules/
 */node_modules/
 
 # Build outputs
-dist/
-*/dist/
+# root dist/ is included for Plesk/cPanel production deployment
+backend/dist/
+H/dist/
 dist-ssr/
 build/
 *.local
