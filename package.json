@@ -1,0 +1,10 @@
+{
+  "name": "hrms",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "npm --prefix H run dev",
+    "build": "npm --prefix H run build",
+    "preview": "npm --prefix H run preview"
+  }
+}
